@@ -3,11 +3,9 @@ logs/
 .DS_Store
 node_modules/
 __pycache__/
-.claude/
-.claudedocs/
 Docs/
 Tests/
 wave_context.json
 wave_performance_metrics.json
-README.md
+Mental Map.md
 error.log

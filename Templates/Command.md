@@ -1,270 +1,256 @@
+# Command Template - SuperClaude Framework
+
+<!--
+INSTRUCTIONS FOR CREATING A NEW COMMAND:
+1. Replace all placeholders marked with [PLACEHOLDER] with your content
+2. Ensure YAML frontmatter includes required fields (allowed-tools, description)
+3. Follow the $ARGUMENTS pattern for dynamic input handling
+4. Add your command to /commands/ directory
+5. Update COMMANDS.md with your new command
+6. Test with various flag combinations
+-->
+
 ---
-allowed-tools: [Read, Grep, Glob, Bash, TodoWrite, TodoRead, Edit, MultiEdit, Write]
-description: "Template for Claude Code slash commands with SuperClaude framework integration"
+allowed-tools: [Read, Grep, Glob, Bash, TodoWrite, Edit, MultiEdit, Write, Task, WebFetch, WebSearch, NotebookRead, NotebookEdit]
+description: "[Brief one-line description of what this command does]"
+framework-version: "3.0"
 ---
 
-# /<command-name> - <Command Title>
+# /[command-name] - [Command Title]
 
-**Purpose**: <Brief description of command functionality>  
-**Category**: <Development|Analysis|Quality|Documentation|Planning|Testing|Deployment|Meta>  
-**Syntax**: `/<command-name> $ARGUMENTS`
+**Purpose**: [Clear description of command functionality and value]  
+**Category**: [Development|Analysis|Quality|Documentation|Planning|Testing|Deployment|Meta]  
+**Syntax**: `/[command-name] $ARGUMENTS`
 
 ## Examples
 
 ```bash
-/<command-name> basic-usage
-/<command-name> @src/components/ --detailed
-/<command-name> --analysis-type performance !npm test
+# Basic usage
+/[command-name] [basic-argument]
+
+# With file references
+/[command-name] @src/components/ --[flag]
+
+# With bash integration
+/[command-name] !npm test --[flag]
+
+# Complex example
+/[command-name] @src/ --think-hard --persona-[type] --scope project
 ```
 
 ## Command Arguments
 
 **$ARGUMENTS Processing**:
-- `[target]` - Target files/directories for command operation
-- `@<path>` - File reference integration with Claude Code
-- `!<command>` - Bash command execution integration
-- `--<flag>` - Command-specific behavior modification
+- `[target]` - [Description of primary target/argument]
+- `@<path>` - File/directory references for analysis
+- `!<command>` - Bash commands to execute
+- `--<flag>` - Modify command behavior
 
-### Primary Flags
+### Command-Specific Flags
 
-- `--<primary-flag>`: <Description of main functionality>
-- `--<secondary-flag>`: <Description of secondary feature>
-- `--scope [level]`: Analysis scope (file|module|project|system)
+- `--[primary-flag]`: [Main functionality modifier]
+- `--[secondary-flag]`: [Secondary feature]
+- `--[option] [value]`: [Parameterized option]
 
 ### Universal SuperClaude Flags
 
-- `--plan`: Display execution plan before operations
-- `--think`: Enable Sequential thinking for complex analysis (~4K tokens)
-- `--think-hard`: Deep architectural analysis (~10K tokens)  
-- `--ultrathink`: Critical system analysis (~32K tokens)
-- `--uc`: Activate UltraCompressed mode for token efficiency
-- `--introspect`: Transparency mode with decision-making exposure
+- `--plan`: Show execution plan before starting
+- `--think`: Standard analysis (~4K tokens)
+- `--think-hard`: Deep analysis (~10K tokens)  
+- `--ultrathink`: Maximum depth (~32K tokens)
+- `--uc`: UltraCompressed mode
+- `--answer-only`: Direct response mode without proactive behavior
+- `--introspect`: Show decision-making process
 
-### Persona Integration
+### Wave System Flags (For Complex Operations)
 
-- `--persona-<type>`: Activate specific SuperClaude persona
-  - `architect`: Systems architecture specialist
-  - `frontend`: UX specialist, accessibility advocate
-  - `backend`: Reliability engineer, API specialist
-  - `analyzer`: Root cause specialist, investigator
-  - `security`: Threat modeler, compliance expert
-  - `mentor`: Knowledge transfer, educator
-  - `refactorer`: Code quality specialist
-  - `performance`: Optimization specialist
-  - `qa`: Quality advocate, testing specialist
+- `--wave-mode`: Enable successive wave orchestration
+- `--force-waves`: Override auto-detection and force wave mode
+- `--single-wave`: Disable wave mode, use traditional execution
+- `--adaptive-waves`: Dynamic wave configuration based on complexity
+- `--progressive-waves`: Progressive enhancement strategy
+- `--systematic-waves`: Systematic analysis strategy
+- `--enterprise-waves`: Enterprise-scale orchestration
+- `--wave-validation`: Enable quality gates between waves
+- `--wave-count [n]`: Override automatic wave count (default: 5)
+- `--wave-agents [types]`: Custom wave agent specializations
+- `--wave-threshold [level]`: Custom complexity threshold (0.0-1.0)
+- `--wave-strategy [name]`: Force specific wave strategy
+- `--wave-intelligence [level]`: Control compound intelligence level
+- `--wave-parallel`: Enable parallel execution within waves
+- `--wave-checkpoint`: Enable automatic checkpointing
+- `--wave-dry-run`: Simulate wave execution without changes
 
-### MCP Server Control
+### Orchestrator Flags (For Multi-Agent Operations)
 
-- `--c7|--context7`: Enable Context7 for official documentation
-- `--seq|--sequential`: Enable Sequential for complex thinking
-- `--magic`: Enable Magic for UI components (when applicable)
-- `--pup|--puppeteer`: Enable Puppeteer for browser automation
-- `--all-mcp`: Enable all MCP servers
-- `--no-mcp`: Disable all MCP servers
+- `--orchestrate`: Enable multi-agent orchestration
+- `--delegate`: Enable task delegation to specialized agents
+- `--introspect`: Show internal decision-making process
+- `--compound-intelligence`: Enable cross-agent knowledge sharing
+
+### Scope & Focus
+
+- `--scope [file|module|project|system]`: Analysis boundary
+- `--focus [area]`: Specific aspect to emphasize
 
 ## Workflow Process
 
-### Phase 1: Initialization
-1. **Context Reading**: Use TodoRead() to understand current task state
-2. **Argument Processing**: Parse $ARGUMENTS and validate inputs
-3. **File Resolution**: Process @ file references using Read/Glob tools
-4. **Persona Activation**: Auto-select or apply specified persona
+1. **Parse Arguments**: Process $ARGUMENTS, validate inputs
+2. **Context Assessment**: Analyze complexity, scope, and requirements
+3. **Orchestration Decision**: Choose single-agent, wave, or multi-agent approach
+4. **[Step 4 Name]**: [What happens in this step]
+5. **[Step 5 Name]**: [What happens in this step]
+6. **Quality Validation**: Ensure output meets standards
+7. **Generate Output**: Format results with SuperClaude symbols
 
-### Phase 2: Analysis/Execution
-1. **Tool Orchestration**: Coordinate Claude Code native tools
-2. **MCP Integration**: Activate appropriate MCP servers based on flags
-3. **Task Creation**: Use TodoWrite() for complex multi-step operations
-4. **Progress Tracking**: Real-time task status updates
+### Orchestration Patterns
 
-### Phase 3: Output/Completion
-1. **Results Compilation**: Synthesize findings with SuperClaude symbols
-2. **Quality Validation**: Verify output completeness and accuracy
-3. **Task Completion**: Mark TodoWrite tasks as completed
-4. **Next Steps**: Provide actionable recommendations
+**Single-Agent Mode**: Traditional single-agent execution
+- Standard command processing
+- Direct tool usage
+- Linear workflow
 
-## Claude Code Integration
+**Wave Mode**: Successive wave orchestration (see FLAGS.md for complete documentation)
+- `--wave-mode`: Enable automatic wave orchestration
+- `--wave-strategy [type]`: Choose wave strategy (progressive, systematic, adaptive, enterprise, validation)
+- `--wave-validation`: Enable quality gates between waves
+- `--wave-agents [types]`: Specify custom wave agent specializations
+- `--wave-checkpoint`: Enable automatic checkpointing for safety
+- `--compound-intelligence`: Enable context accumulation between waves
 
-### Native Tool Usage
+**Multi-Agent Mode**: Parallel agent delegation
+- `--orchestrate`: Enable multi-agent coordination
+- `--delegate`: Enable specialized task delegation
+- `--introspect`: Show coordination decisions
+- `--compound-intelligence`: Enable cross-agent knowledge sharing
 
-**Read Tool**:
-- Process @ file references directly
-- Analyze configuration files and source code
-- Extract patterns and architectural insights
+## Output Format
 
-**Grep Tool**:
-- Search for patterns across codebase
-- Identify usage patterns and dependencies
-- Locate security vulnerabilities and code smells
+### Standard Output
+```
+📊 [Section Header]
+├─ [Key metric]: [Value]
+├─ [Another metric]: [Value]
+└─ [Summary]: [Description]
 
-**Glob Tool**:
-- Discover files matching patterns
-- Build comprehensive file inventories
-- Support wildcard-based target selection
-
-**Bash Tool**:
-- Execute ! command integrations
-- Run project-specific tools and scripts
-- Perform system-level operations safely
-
-**TodoWrite/TodoRead**:
-- Track complex multi-step operations
-- Provide user visibility into progress
-- Coordinate between workflow phases
-
-### File Reference Patterns
-
-```bash
-# Direct file analysis
-/<command-name> @src/components/Button.tsx
-
-# Directory analysis
-/<command-name> @src/ --recursive
-
-# Multiple targets
-/<command-name> @src/components/ @tests/ @docs/
-
-# Pattern-based selection
-/<command-name> @**/*.ts --exclude @node_modules/
+✅ [Success indicator]
+⚠️ [Warning if applicable]
+🎯 [Recommendations]
 ```
 
-### Bash Integration Patterns
-
-```bash
-# Pre-command validation
-/<command-name> !npm test && @src/
-
-# Command chaining
-/<command-name> @src/ !eslint --fix
-
-# Environment setup
-/<command-name> !export NODE_ENV=test && @tests/
+### UltraCompressed Output (`--uc`)
+```
+[Concise symbol-heavy output example]
+[Show 60-80% reduction]
 ```
 
-## SuperClaude Framework Integration
+## Integration Patterns
 
-### Symbol System Usage
+### Auto-Activation
 
-Use SuperClaude unified symbols for consistent communication:
-- `→` leads to, implies, results in
-- `✅` completed, successful, passed  
-- `❌` failed, error, blocked
-- `🔄` in progress, working, active
-- `📊` metrics, data, statistics
-- `🎯` target, goal, objective
+**Personas**:
+- `[persona-name]`: When [condition is met]
+- `[persona-name]`: For [specific task type]
 
-### Token Efficiency
+**MCP Servers**:
+- `Context7`: When library documentation or framework patterns needed
+- `Sequential`: For complex analysis requiring multi-step reasoning
+- `Magic`: If UI components or design system creation involved
+- `Playwright`: When browser automation, testing, or performance measurement needed
 
-**Standard Mode**: 
-- Balanced detail with clear explanations
-- Use abbreviations: `cfg`, `impl`, `perf`, `sec`, `arch`
-- Structured output with headers and bullets
+**Server Selection Examples**:
+```bash
+# Context7 for framework documentation
+/implement @components/ --framework react
+# Auto-activates Context7 for React patterns
 
-**UltraCompressed Mode** (`--uc`):
-- 60-80% token reduction
-- Aggressive symbol substitution
-- Essential information preservation
-- Auto-generated symbol legend
+# Sequential for complex analysis
+/analyze @codebase/ --think-hard
+# Auto-activates Sequential for deep reasoning
 
-### Evidence-Based Language
+# Magic for UI component creation
+/create-component LoginForm --responsive
+# Auto-activates Magic for component generation
 
-**Required Qualifiers**:
-- "Testing indicates..." instead of "This is the best..."
-- "Metrics show..." instead of "Obviously..."
-- "Documentation suggests..." instead of "Always..."
+# Playwright for performance testing
+/test --performance @app/
+# Auto-activates Playwright for metrics collection
+```
 
-**Prohibited Speculation**:
-- Avoid "best", "optimal", "perfect" without evidence
-- No unsupported performance claims
-- No absolute statements without measurement
+### Command Interactions
+
+**Works Well With**:
+- `/[command]` → `/[this-command]`: [Workflow description]
+- Parallel with: `/[command]`, `/[command]`
+
+**Prerequisites**:
+- [Any required setup or context]
+- [Dependencies that must exist]
 
 ## Error Handling
 
-### Input Validation
-1. Validate @ file references exist and are accessible
-2. Check ! bash commands are safe and permitted
-3. Verify flag combinations are compatible
-4. Ensure required dependencies are available
+### Common Errors
 
-### Graceful Degradation
-1. **MCP Server Unavailable**: Fall back to native tools + WebSearch
-2. **File Access Issues**: Provide clear error messages with alternatives
-3. **Command Failures**: Attempt recovery with alternative approaches
-4. **Token Limits**: Automatically activate compression mode
+1. **[Error Type]**: [Description]
+   - **Cause**: [Why it happens]
+   - **Fix**: [How to resolve]
+   - **Prevention**: [How to avoid]
+
+2. **[Error Type]**: [Description]
+   - **Cause**: [Why it happens]  
+   - **Fix**: [How to resolve]
 
 ### Recovery Strategies
-1. **Partial Results**: Deliver what's possible with clear limitations noted
-2. **Alternative Approaches**: Suggest manual steps when automation fails
-3. **Retry Logic**: Intelligent retry for transient failures
-4. **User Guidance**: Clear next steps when manual intervention needed
 
-## Quality Standards
+- **Fallback**: [Alternative approach when primary fails]
+- **Partial Results**: [What can be delivered despite errors]
+- **Manual Steps**: [User actions to complete task]
 
-### Validation Requirements
-- All code examples must be syntactically correct
-- File paths must use absolute paths for tools
-- Bash commands must be properly quoted and safe
-- Output must be actionable and specific
+## Performance Profile
 
-### Performance Requirements
-- Batch tool calls when possible for parallel execution
-- Use appropriate thinking depth flags for complexity
-- Optimize token usage through compression when needed
-- Cache results for repeated operations within session
+**Token Usage**:
+- Basic: ~2-5K tokens (simple operations)
+- With `--think`: ~5-12K tokens (standard analysis)
+- With `--think-hard`: ~12-20K tokens (deep analysis)
+- With `--ultrathink`: ~20-35K tokens (comprehensive analysis)
+- Multi-agent mode: ~10-30K tokens (distributed across agents)
 
-### Security Requirements
-- Never expose sensitive information in logs or output
-- Validate all user inputs for path traversal attacks
-- Use safe bash commands with proper parameter validation
-- Respect file permissions and access controls
+**Execution Time**:
+- Small scope (1-5 files): 30-90 seconds
+- Module scope (5-20 files): 2-8 minutes
+- Project scope (20-100 files): 8-25 minutes
+- System scope (100+ files): 25-60 minutes
+- Multi-agent operations: 5-20 minutes (parallel processing)
 
-## Example Implementation
+**Resource Requirements**:
+- File operations: [Light|Moderate|Heavy]
+- CPU usage: [Low|Medium|High]
+- Memory: [Low|Medium|High]
 
-```bash
-# Comprehensive analysis with full SuperClaude integration
-/<command-name> @src/ --think-hard --seq --persona-analyzer --introspect
+## Implementation Notes
 
-🧠 **Sequential Analysis Activated**
-🔍 **Analyzing**: 156 files across 12 modules
-🎯 **Focus**: Comprehensive code quality & architecture review
+<!-- Internal notes for maintainers -->
+**Key Considerations**:
+- [Important implementation detail]
+- [Performance optimization note]
+- [Integration consideration]
 
-📊 **Phase 1**: File discovery & categorization
-├─ TypeScript files: 89 (57%)
-├─ React components: 34 (22%)  
-├─ Test files: 23 (15%)
-└─ Configuration: 10 (6%)
-
-🔄 **Phase 2**: Pattern analysis with Context7 integration
-📚 Fetching React best practices...
-🔍 Analyzing component patterns...
-⚡ Performance hotspots identified: 3
-
-📋 **Phase 3**: Results synthesis
-✅ **Quality Score**: 87/100 (Good)
-⚠️ **Issues Found**: 12 medium, 3 high priority
-🎯 **Recommendations**: 8 actionable improvements
-
-💡 **Key Insights**:
-├─ Architecture: Solid modular design
-├─ Performance: Bundle size optimization needed  
-├─ Security: Input validation gaps found
-└─ Testing: Coverage adequate (89%)
-```
-
-## Integration Checklist
-
-- [ ] YAML frontmatter with required fields
-- [ ] $ARGUMENTS placeholder usage
-- [ ] @ file reference support
-- [ ] ! bash command integration
-- [ ] SuperClaude symbol system
-- [ ] Persona integration points
-- [ ] MCP server activation logic
-- [ ] TodoWrite/TodoRead workflow
-- [ ] Error handling & recovery
-- [ ] Evidence-based language
-- [ ] Token efficiency optimization
-- [ ] Quality validation steps
+**Future Enhancements**:
+- [Planned improvement]
+- [Potential feature]
 
 ---
 
-*Template Version: 1.0 | SuperClaude Framework Integration | Claude Code Compatible*
+<!-- 
+CHECKLIST BEFORE SUBMITTING:
+- [ ] YAML frontmatter is complete and valid
+- [ ] $ARGUMENTS placeholder used correctly
+- [ ] Examples cover common use cases
+- [ ] Universal flags are documented
+- [ ] Error handling is comprehensive
+- [ ] Performance metrics are realistic
+- [ ] Integration patterns are clear
+- [ ] Output format examples provided
+- [ ] Added to /commands/ directory
+- [ ] COMMANDS.md updated
+-->

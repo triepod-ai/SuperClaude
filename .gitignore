@@ -5,5 +5,9 @@ node_modules/
 __pycache__/
 .claude/
 .claudedocs/
-Future/
-Plans/
+Docs/
+Tests/
+wave_context.json
+wave_performance_metrics.json
+README.md
+error.log

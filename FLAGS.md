@@ -1,300 +1,221 @@
 # FLAGS.md - SuperClaude Flag Reference
 
-This is the comprehensive flag reference for Claude Code's SuperClaude framework. Claude Code will check this file for detailed flag usage, syntax, behavior, and integration patterns.
+Flag system for Claude Code SuperClaude framework with auto-activation and conflict resolution.
 
-## Universal Flag System
+## Flag System Architecture
 
-### Planning & Analysis Flags
+**Priority Order**:
+1. Explicit user flags override auto-detection
+2. Safety flags override optimization flags
+3. Performance flags activate under resource pressure
+4. Persona flags based on task patterns
+5. MCP server flags with context-sensitive activation
+6. Wave flags based on complexity thresholds
+
+## Planning & Analysis Flags
 
 **`--plan`**
-- **Purpose**: Display detailed execution plan before any operations
-- **Behavior**: Shows tools to be used, expected outputs, and step sequence
-- **Use Cases**: Complex operations, user wants transparency, debugging workflows
-- **Integration**: Works with all commands to provide execution transparency
-- **Example**: `/analyze --plan src/` shows analysis scope and tool usage
+- Display execution plan before operations
+- Shows tools, outputs, and step sequence
 
 **`--think`**
-- **Purpose**: Multi-file analysis with context awareness (~4K tokens)
-- **Behavior**: Enables Sequential MCP for structured problem-solving
-- **Use Cases**: Module-level analysis, understanding code relationships
-- **Auto-Activation**: Complex debugging scenarios, architectural questions
-- **Example**: `/troubleshoot --think "slow API responses"`
+- Multi-file analysis (~4K tokens)
+- Enables Sequential MCP for structured problem-solving
+- Auto-activates: Import chains >5 files, cross-module calls >10 references
+- Auto-enables `--seq` and suggests `--persona-analyzer`
 
 **`--think-hard`**
-- **Purpose**: Deep architectural analysis (~10K tokens)
-- **Behavior**: Comprehensive system-wide analysis with cross-module dependencies
-- **Use Cases**: System design, complex debugging, architecture review
-- **Performance**: High token usage, comprehensive insights
-- **Example**: `/analyze --arch --think-hard`
+- Deep architectural analysis (~10K tokens)
+- System-wide analysis with cross-module dependencies
+- Auto-activates: System refactoring, bottlenecks >3 modules, security vulnerabilities
+- Auto-enables `--seq --c7` and suggests `--persona-architect`
 
 **`--ultrathink`**
-- **Purpose**: Critical system redesign analysis (~32K tokens)
-- **Behavior**: Maximum depth analysis for complex system problems
-- **Use Cases**: Major refactoring, performance crises, security audits
-- **Performance**: Highest token usage, deepest analysis
-- **Example**: `/improve --arch --ultrathink --security`
+- Critical system redesign analysis (~32K tokens)
+- Maximum depth analysis for complex problems
+- Auto-activates: Legacy modernization, critical vulnerabilities, performance degradation >50%
+- Auto-enables `--seq --c7 --all-mcp` and suggests `--enterprise-waves`
 
-### Compression & Efficiency Flags
+## Compression & Efficiency Flags
 
 **`--uc` / `--ultracompressed`**
-- **Purpose**: Activate UltraCompressed mode for maximum token efficiency
-- **Behavior**: 60-80% token reduction using symbols, abbreviations, structured output
-- **Auto-Activation**: When context usage > 75% or large-scale operations
-- **Symbol Legend**: Auto-generated for symbols used in response
-- **Quality Preservation**: Maintains technical accuracy and actionable information
-- **See TOKENS.md**: For complete UltraCompressed mode documentation, compression techniques, and symbol system
+- 60-80% token reduction using symbols and structured output
+- Auto-activates: Context usage >75% or large-scale operations
+- Auto-generated symbol legend, maintains technical accuracy
+
+**`--answer-only`**
+- Direct response without task creation or workflow automation
+- Explicit use only, no auto-activation
+
+**`--validate`**
+- Pre-operation validation and risk assessment
+- Auto-activates: Risk score >0.7 or resource usage >75%
+- Risk algorithm: complexity*0.3 + vulnerabilities*0.25 + resources*0.2 + failure_prob*0.15 + time*0.1
+
+**`--safe-mode`**
+- Maximum validation with conservative execution
+- Auto-activates: Resource usage >85% or production environment
+- Enables validation checks, forces --uc mode, blocks risky operations
 
 **`--verbose`**
-- **Purpose**: Maximum detail and explanation
-- **Behavior**: Comprehensive output with full explanations
-- **Use Cases**: Learning scenarios, complex system documentation
-- **Token Impact**: High usage for maximum clarity
+- Maximum detail and explanation
+- High token usage for comprehensive output
 
-### MCP Server Control Flags
+## MCP Server Control Flags
 
 **`--c7` / `--context7`**
-- **Purpose**: Enable Context7 for official library documentation lookup
-- **Auto-Activation**: When detecting external library imports or framework questions
-- **Workflow**: resolve-library-id → get-library-docs → extract patterns → implement
-- **Best Practice**: Always cite documentation sources and verify version compatibility
-- **Integration**: Works with development and analysis commands
+- Enable Context7 for library documentation lookup
+- Auto-activates: External library imports, framework questions
+- Detection: import/require/from/use statements, framework keywords
+- Workflow: resolve-library-id → get-library-docs → implement
 
 **`--seq` / `--sequential`**
-- **Purpose**: Enable Sequential for complex multi-step analysis and thinking
-- **Auto-Activation**: Complex debugging, system design, `--think` flags
-- **Use Cases**: Root cause analysis, architectural planning, workflow optimization
-- **Integration**: Works with all thinking depth flags and analysis commands
+- Enable Sequential for complex multi-step analysis
+- Auto-activates: Complex debugging, system design, --think flags
+- Detection: debug/trace/analyze keywords, nested conditionals, async chains
 
 **`--magic`**
-- **Purpose**: Enable Magic for UI component generation and optimization
-- **Auto-Activation**: UI component requests, design system queries
-- **Capabilities**: React/Vue/Angular support, accessibility compliance, responsive design
-- **Integration**: Works with design systems and existing component patterns
+- Enable Magic for UI component generation
+- Auto-activates: UI component requests, design system queries
+- Detection: component/button/form keywords, JSX patterns, accessibility requirements
 
-**`--pup` / `--puppeteer`**
-- **Purpose**: Enable Puppeteer for browser automation and E2E testing
-- **Use Cases**: Performance monitoring, user interaction testing, screenshot capture
-- **Capabilities**: Browser automation, metrics collection, visual testing
-- **Integration**: Works with testing workflows and performance analysis
+**`--play` / `--playwright`**
+- Enable Playwright for cross-browser automation and E2E testing
+- Detection: test/e2e keywords, performance monitoring, visual testing, cross-browser requirements
 
 **`--all-mcp`**
-- **Purpose**: Enable all available MCP servers for comprehensive analysis
-- **Use Cases**: Complex multi-domain problems, unknown solution space
-- **Behavior**: Activates Context7, Sequential, Magic, and Puppeteer simultaneously
-- **Performance**: Higher token usage, use judiciously
+- Enable all MCP servers simultaneously
+- Auto-activates: Problem complexity >0.8, multi-domain indicators
+- Higher token usage, use judiciously
 
 **`--no-mcp`**
-- **Purpose**: Disable all MCP servers, use only native Claude Code tools
-- **Use Cases**: Performance-critical operations, when MCP servers unavailable
-- **Fallbacks**: WebSearch for research, native tools for all operations
+- Disable all MCP servers, use native tools only
+- 40-60% faster execution, WebSearch fallback
 
 **`--no-[server]`**
-- **Purpose**: Disable specific MCP server (e.g., `--no-magic`, `--no-seq`)
-- **Use Cases**: Avoiding specific server dependencies, performance optimization
-- **Behavior**: Server-specific fallback strategies activated
+- Disable specific MCP server (e.g., --no-magic, --no-seq)
+- Server-specific fallback strategies, 10-30% faster per disabled server
 
-### Scope & Focus Flags
+## Sub-Agent Delegation Flags
+
+**`--delegate [files|folders|auto]`**
+- Enable Task tool sub-agent delegation for parallel processing
+- **files**: Delegate individual file analysis to sub-agents
+- **folders**: Delegate directory-level analysis to sub-agents  
+- **auto**: Auto-detect delegation strategy based on scope and complexity
+- Auto-activates: >7 directories or >50 files
+- 40-70% time savings for suitable operations
+
+**`--concurrency [n]`**
+- Control max concurrent sub-agents and tasks (default: 7, range: 1-15)
+- Dynamic allocation based on resources and complexity
+- Prevents resource exhaustion in complex scenarios
+
+## Wave Orchestration Flags
+
+**`--wave-mode [auto|force|off]`**
+- Control wave orchestration activation
+- **auto**: Auto-activates based on complexity >0.8 AND file_count >20 AND operation_types >2
+- **force**: Override auto-detection and force wave mode for borderline cases
+- **off**: Disable wave mode, use Sub-Agent delegation instead
+- 30-50% better results through compound intelligence and progressive enhancement
+
+**`--wave-strategy [progressive|systematic|adaptive|enterprise]`**
+- Select wave orchestration strategy
+- **progressive**: Iterative enhancement for incremental improvements
+- **systematic**: Comprehensive methodical analysis for complex problems
+- **adaptive**: Dynamic configuration based on varying complexity
+- **enterprise**: Large-scale orchestration for >100 files with >0.7 complexity
+- Auto-selects based on project characteristics and operation type
+
+**`--wave-delegation [files|folders|tasks]`**
+- Control how Wave system delegates work to Sub-Agent
+- **files**: Sub-Agent delegates individual file analysis across waves
+- **folders**: Sub-Agent delegates directory-level analysis across waves
+- **tasks**: Sub-Agent delegates by task type (security, performance, quality, architecture)
+- Integrates with `--delegate` flag for coordinated multi-phase execution
+
+## Scope & Focus Flags
 
 **`--scope [level]`**
-- **file**: Single file analysis
-- **module**: Module/directory level
-- **project**: Entire project scope
-- **system**: System-wide analysis
+- file: Single file analysis
+- module: Module/directory level
+- project: Entire project scope
+- system: System-wide analysis
 
 **`--focus [domain]`**
-- **performance**: Performance optimization focus
-- **security**: Security analysis and hardening
-- **quality**: Code quality and maintainability
-- **architecture**: System design and structure
-- **accessibility**: UI/UX accessibility compliance
-- **testing**: Test coverage and quality
+- performance: Performance optimization
+- security: Security analysis and hardening
+- quality: Code quality and maintainability
+- architecture: System design and structure
+- accessibility: UI/UX accessibility compliance
+- testing: Test coverage and quality
 
-### Persona Activation Flags
+## Iterative Improvement Flags
 
-**`--persona-architect`**
-- **Identity**: Systems architecture specialist, long-term thinking focus
-- **Decision Framework**: Long-term maintainability > short-term gains
-- **MCP Preference**: Sequential (primary) for architectural analysis, Context7 for patterns
-- **Command Specialization**: `/analyze`, `/estimate`, `/improve --arch`, `/design`
-- **Communication Style**: Strategic overview, dependency mapping, scalability focus
+**`--loop`**
+- Enable iterative improvement mode for commands
+- Auto-activates: Quality improvement requests, refinement operations, polish tasks
+- Compatible commands: /improve, /refine, /enhance, /fix, /cleanup, /analyze
+- Default: 3 iterations with automatic validation
 
-**`--persona-frontend`**
-- **Identity**: UX specialist, accessibility advocate, performance-conscious
-- **Decision Framework**: User needs > technical elegance, accessibility by default
-- **MCP Preference**: Magic (primary) for UI components, Puppeteer for testing
-- **Command Specialization**: `/build`, `/improve --perf`, `/test e2e`, `/design`
-- **Communication Style**: User-centric, visual feedback, responsive design focus
+**`--iterations [n]`**
+- Control number of improvement cycles (default: 3, range: 1-10)
+- Overrides intelligent default based on operation complexity
 
-**`--persona-backend`**
-- **Identity**: Reliability engineer, API specialist, data integrity focus
-- **Decision Framework**: Reliability > features > convenience, security by default
-- **MCP Preference**: Context7 (primary) for patterns, Sequential for analysis
-- **Command Specialization**: `/build --api`, `/deploy`, `/scan --security`, `/migrate`
-- **Communication Style**: System reliability, error handling, performance metrics
+**`--interactive`**
+- Enable user confirmation between iterations
+- Pauses for review and approval before each cycle
+- Allows manual guidance and course correction
 
-**`--persona-analyzer`**
-- **Identity**: Root cause specialist, evidence-based investigator
-- **Decision Framework**: Evidence > intuition > assumptions, systematic approach
-- **MCP Preference**: All servers for comprehensive analysis, Sequential primary
-- **Command Specialization**: `/analyze`, `/troubleshoot`, `/explain --detailed`, `/review`
-- **Communication Style**: Methodical investigation, data-driven conclusions
+## Persona Activation Flags
 
-**`--persona-security`**
-- **Identity**: Threat modeler, compliance expert, vulnerability specialist
-- **Decision Framework**: Security by default, zero trust architecture
-- **MCP Preference**: Sequential (threat modeling), Context7 (security patterns)
-- **Command Specialization**: `/scan --security`, `/improve --security`, `/analyze --focus security`
-- **Communication Style**: Risk assessment, threat scenarios, mitigation strategies
+**Available Personas**:
+- `--persona-architect`: Systems architecture specialist
+- `--persona-frontend`: UX specialist, accessibility advocate
+- `--persona-backend`: Reliability engineer, API specialist
+- `--persona-analyzer`: Root cause specialist
+- `--persona-security`: Threat modeler, vulnerability specialist
+- `--persona-mentor`: Knowledge transfer specialist
+- `--persona-refactorer`: Code quality specialist
+- `--persona-performance`: Optimization specialist
+- `--persona-qa`: Quality advocate, testing specialist
+- `--persona-devops`: Infrastructure specialist
+- `--persona-scribe=lang`: Professional writer, documentation specialist
 
-**`--persona-mentor`**
-- **Identity**: Knowledge transfer specialist, educator, documentation advocate
-- **Decision Framework**: Understanding > completion, teaching > doing
-- **MCP Preference**: Context7 (educational resources), avoid Magic (show don't generate)
-- **Command Specialization**: `/explain`, `/document`, `/index`, educational workflows
-- **Communication Style**: Step-by-step guidance, educational examples, clear explanations
-
-**`--persona-refactorer`**
-- **Identity**: Code quality specialist, technical debt manager
-- **Decision Framework**: Simplicity > cleverness, maintainability > performance
-- **MCP Preference**: Sequential (analysis), Context7 (refactoring patterns)
-- **Command Specialization**: `/improve --quality`, `/cleanup`, `/analyze --quality`
-- **Communication Style**: Code quality metrics, refactoring opportunities, clean code principles
-
-**`--persona-performance`**
-- **Identity**: Optimization specialist, bottleneck elimination expert
-- **Decision Framework**: Measure first, optimize critical path, avoid premature optimization
-- **MCP Preference**: Puppeteer (metrics), Sequential (analysis)
-- **Command Specialization**: `/improve --perf`, `/analyze --focus performance`, `/test --benchmark`
-- **Communication Style**: Performance metrics, bottleneck identification, optimization recommendations
-
-**`--persona-qa`**
-- **Identity**: Quality advocate, testing specialist, edge case detective
-- **Decision Framework**: Prevention > detection > correction, comprehensive coverage
-- **MCP Preference**: Puppeteer (testing), Sequential (test scenarios)
-- **Command Specialization**: `/test`, `/scan --quality`, `/troubleshoot`, `/review`
-- **Communication Style**: Test coverage, quality gates, edge case scenarios
-
-**`--persona-devops`**
-- **Identity**: Infrastructure specialist, deployment expert, reliability engineer
-- **Decision Framework**: Automation > manual processes, observability by default
-- **MCP Preference**: Sequential (infrastructure analysis), Context7 (deployment patterns)
-- **Command Specialization**: `/deploy`, `/dev-setup`, `/scan --security`, `/migrate`
-- **Communication Style**: Infrastructure as code, automated workflows, monitoring focus
-
-### Introspection & Transparency Flags
+## Introspection & Transparency Flags
 
 **`--introspect` / `--introspection`**
-- **Purpose**: Deep transparency mode exposing thinking process and decision rationale
-- **Auto-Activation**: When working on SuperClaude framework itself, complex debugging
-- **Transparency Markers**:
-  - 🤔 **Thinking**: Internal reasoning process and considerations
-  - 🎯 **Decision**: Choice made with explicit rationale
-  - ⚡ **Action**: Current operation with purpose explanation
-  - 📊 **Check**: Progress validation and status assessment
-  - 💡 **Learning**: Insights gained and pattern recognition
-- **Communication Style**: Conversational reflection, shared uncertainties, alternative approaches
-- **Integration**: Works with all personas and MCP servers for maximum transparency
+- Deep transparency mode exposing thinking process
+- Auto-activates: SuperClaude framework work, complex debugging
+- Transparency markers: 🤔 Thinking, 🎯 Decision, ⚡ Action, 📊 Check, 💡 Learning
+- Conversational reflection with shared uncertainties
 
 ## Flag Integration Patterns
 
-### MCP Server Auto-Activation Rules
+### MCP Server Auto-Activation
 
-**Context7 (`--c7`, `--context7`)**
-- Auto-activates when:
-  - External library imports detected in code
-  - Framework-specific questions asked
-  - Version compatibility checks needed
-  - Documentation patterns requested
-- Integration Commands: `/build`, `/analyze`, `/improve`, `/review`, `/design`, `/dev-setup`
+**Auto-Activation Logic**:
+- **Context7**: External library imports, framework questions, documentation requests
+- **Sequential**: Complex debugging, system design, any --think flags  
+- **Magic**: UI component requests, design system queries, frontend persona
+- **Playwright**: Testing workflows, performance monitoring, QA persona
 
-**Sequential (`--seq`, `--sequential`)**  
-- Auto-activates when:
-  - Complex debugging scenarios encountered
-  - System design questions asked
-  - Any `--think` flags used
-  - Multi-step analysis required
-- Integration Commands: `/analyze`, `/troubleshoot`, `/improve`, `/review`, `/design`, `/spawn`, `/task`
+### Flag Precedence
 
-**Magic (`--magic`)**
-- Auto-activates when:
-  - UI component requests made
-  - Design system queries
-  - Frontend persona active
-  - Component-related tasks
-- Integration Commands: `/build`, `/design`, `/review`, `/improve`
+1. Safety flags (--safe-mode) > optimization flags
+2. Explicit flags > auto-activation
+3. Thinking depth: --ultrathink > --think-hard > --think
+4. --no-mcp overrides all individual MCP flags
+5. Scope: system > project > module > file
+6. Last specified persona takes precedence
+7. Wave mode: --wave-mode off > --wave-mode force > --wave-mode auto
+8. Sub-Agent delegation: explicit --delegate > auto-detection
+9. Loop mode: explicit --loop > auto-detection based on refinement keywords
+10. --uc auto-activation overrides verbose flags
 
-**Puppeteer (`--pup`, `--puppeteer`)**
-- Auto-activates when:
-  - Testing workflows initiated
-  - Performance monitoring requested
-  - E2E test generation needed
-  - QA persona active
-- Integration Commands: `/test`, `/review`, `/improve`, `/deploy`, `/troubleshoot`
+### Context-Based Auto-Activation
 
-### Command-Flag Compatibility Matrix
-
-| Command | Planning | Thinking | MCP | Scope/Focus | Personas | Compression |
-|---------|----------|----------|-----|-------------|----------|-------------|
-| `/analyze` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `/build` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `/troubleshoot` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `/improve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `/test` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `/deploy` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `/design` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `/scan` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `/review` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `/document` | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| `/explain` | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| `/estimate` | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| `/cleanup` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `/git` | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ |
-| `/migrate` | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-| `/task` | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `/spawn` | ✅ | ❌ | ✅ | ❌ | ✅ | ❌ |
-| `/index` | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
-| `/load` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `/dev-setup` | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
-
-### Smart Flag Inference
-
-**Flag Combinations and Precedence**
-1. **Thinking Depth Hierarchy**: `--ultrathink` > `--think-hard` > `--think`
-2. **MCP Control**: `--no-mcp` overrides all individual MCP flags
-3. **Scope Expansion**: `system` > `project` > `module` > `file`
-4. **Persona Conflicts**: Last specified persona takes precedence
-
-**Context-Based Auto-Activation**
-- **Performance Issues** → Auto-activate `--persona-performance` + `--focus performance`
-- **Security Concerns** → Auto-activate `--persona-security` + `--focus security`
-- **UI/UX Tasks** → Auto-activate `--persona-frontend` + `--magic`
-- **Complex Debugging** → Auto-activate `--think` + `--seq`
-- **Large Codebase** → Auto-activate `--uc` when context > 75%
-
-**Performance Optimization Rules**
-1. **Token Budget Management**:
-   - Use `--uc` automatically when approaching token limits
-   - Disable non-essential MCP servers for performance
-   - Batch operations when multiple flags active
-
-2. **Smart Caching**:
-   - Cache Context7 documentation lookups
-   - Reuse Sequential analysis results
-   - Store Magic component patterns
-
-3. **Progressive Enhancement**:
-   - Start with minimal flags
-   - Add complexity only when needed
-   - Fallback gracefully when resources limited
-
-## Flag Usage Best Practices
-
-1. **Start Simple**: Begin with basic flags and add complexity as needed
-2. **Combine Wisely**: Use complementary flags together (e.g., `--think --seq`)
-3. **Monitor Performance**: Watch token usage with thinking flags
-4. **Use Auto-Activation**: Let the system infer flags from context
-5. **Explicit Override**: Use `--no-*` flags when auto-activation unwanted
-
----
-
-*FLAGS.md - SuperClaude Flag Reference v1.0 | Complete Flag Documentation for Claude Code*
+**Wave Auto-Activation**: complexity ≥0.7 AND files >20 AND operation_types >2
+**Sub-Agent Auto-Activation**: >7 directories OR >50 files OR complexity >0.8
+**Loop Auto-Activation**: polish, refine, enhance, improve keywords detected

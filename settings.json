@@ -1,0 +1,508 @@
+{
+  "description": "SuperClaude Framework v3.0 - Global Claude Code Settings",
+  "version": "3.0.0",
+  "framework": "superclaude",
+  
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "Bash(find:*)",
+      "Bash(ls:*)", 
+      "Bash(mv:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(rm:*)",
+      "Bash(chmod:*)",
+      "Bash(cat:*)",
+      "Bash(echo:*)",
+      "Bash(time:*)",
+      "Bash(python3:*)",
+      "Bash(python:*)",
+      "Bash(claude:*)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:npmjs.com)",
+      "WebFetch(domain:stackoverflow.com)",
+      "mcp__sequential-thinking__sequentialthinking",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__get-library-docs",
+      "mcp__magic__21st_magic_component_builder",
+      "mcp__magic__logo_search",
+      "mcp__magic__21st_magic_component_inspiration",
+      "mcp__magic__21st_magic_component_refiner",
+      "mcp__puppeteer__*",
+      "mcp__playwright__*",
+      "Task(*)",
+      "TodoWrite(*)",
+      "TodoRead(*)",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "MultiEdit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "LS(*)",
+      "NotebookRead(*)",
+      "NotebookEdit(*)",
+      "ListMcpResourcesTool(*)",
+      "ReadMcpResourceTool(*)"
+    ],
+    "deny": [
+      "Bash(rm:-rf /*)",
+      "Bash(rm:-rf ~/*)",
+      "Bash(sudo:*)",
+      "Bash(curl:*://*/admin*)",
+      "Bash(wget:*://*/admin*)",
+      "WebFetch(domain:localhost)",
+      "WebFetch(domain:127.0.0.1)",
+      "WebFetch(domain:0.0.0.0)"
+    ],
+    "additionalDirectories": [
+      "~/.claude"
+    ]
+  },
+
+  "env": {
+    "CLAUDE_CODE_SUPERCLAUDE": "enabled",
+    "SUPERCLAUDE_VERSION": "3.0.0",
+    "SUPERCLAUDE_HOOKS_ENABLED": "true",
+    "SUPERCLAUDE_WAVE_MODE": "auto",
+    "SUPERCLAUDE_PERFORMANCE_TARGET": "100ms",
+    "PYTHON_PATH": "${HOME}/.claude/hooks:${PYTHON_PATH}"
+  },
+
+  "includeCoAuthoredBy": true,
+  "cleanupPeriodDays": 30,
+
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Task(*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/wave_coordinator.py || python3 ${PWD}/.claude/hooks/wave_coordinator.py",
+            "timeout": 10000,
+            "description": "Wave coordination for task delegation and orchestration"
+          }
+        ]
+      },
+      {
+        "matcher": "TodoWrite(*)",
+        "hooks": [
+          {
+            "type": "command", 
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/task_manager.py || python3 ${PWD}/.claude/hooks/task_manager.py",
+            "timeout": 5000,
+            "description": "Task lifecycle management and intelligent routing"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__sequential-thinking__sequentialthinking(*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/wave_sequencer.py || python3 ${PWD}/.claude/hooks/wave_sequencer.py", 
+            "timeout": 5000,
+            "description": "Sequential thinking wave progression and pattern detection"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__magic__*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/mcp_coordinator.py || python3 ${PWD}/.claude/hooks/mcp_coordinator.py",
+            "timeout": 5000,
+            "description": "MCP server request coordination and optimization"
+          }
+        ]
+      },
+      {
+        "matcher": "Write(*)|Edit(*)|MultiEdit(*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/quality_validator.py || python3 ${PWD}/.claude/hooks/quality_validator.py",
+            "timeout": 5000,
+            "description": "Pre-write quality validation and optimization"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/wave_performance_monitor.py || python3 ${PWD}/.claude/hooks/wave_performance_monitor.py",
+            "timeout": 3000,
+            "description": "Real-time performance monitoring and optimization"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command", 
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/context_accumulator.py || python3 ${PWD}/.claude/hooks/context_accumulator.py",
+            "timeout": 5000,
+            "description": "Context compression and intelligent accumulation"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/token_optimizer.py || python3 ${PWD}/.claude/hooks/token_optimizer.py",
+            "timeout": 3000,
+            "description": "Token usage optimization and efficiency monitoring"
+          }
+        ]
+      }
+    ],
+
+    "PostToolUse": [
+      {
+        "matcher": "Task(*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/wave_coordinator.py || python3 ${PWD}/.claude/hooks/wave_coordinator.py",
+            "timeout": 5000,
+            "description": "Post-task wave coordination and result synthesis"
+          }
+        ]
+      },
+      {
+        "matcher": "TodoWrite(*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/task_manager.py || python3 ${PWD}/.claude/hooks/task_manager.py",
+            "timeout": 3000,
+            "description": "Task completion tracking and workflow optimization"
+          }
+        ]
+      },
+      {
+        "matcher": "Write(*)|Edit(*)|MultiEdit(*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/quality_gates_coordinator.py || python3 ${PWD}/.claude/hooks/quality_gates_coordinator.py",
+            "timeout": 5000,
+            "description": "Post-write quality gates and validation coordination"
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__*",
+        "hooks": [
+          {
+            "type": "command", 
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/result_collector.py || python3 ${PWD}/.claude/hooks/result_collector.py",
+            "timeout": 5000,
+            "description": "MCP result collection and compound intelligence synthesis"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash(*)|Read(*)|Grep(*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/performance_monitor.py || python3 ${PWD}/.claude/hooks/performance_monitor.py", 
+            "timeout": 3000,
+            "description": "Performance monitoring and resource optimization"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/wave_performance_monitor.py || python3 ${PWD}/.claude/hooks/wave_performance_monitor.py",
+            "timeout": 3000,
+            "description": "Wave-level performance monitoring and metrics collection"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/context_accumulator.py || python3 ${PWD}/.claude/hooks/context_accumulator.py",
+            "timeout": 3000,
+            "description": "Context state persistence and intelligent compression"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/error_handler.py || python3 ${PWD}/.claude/hooks/error_handler.py",
+            "timeout": 3000,
+            "description": "Error detection, recovery, and learning system"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/synthesis_engine.py || python3 ${PWD}/.claude/hooks/synthesis_engine.py",
+            "timeout": 5000,
+            "description": "Compound intelligence generation and result synthesis"
+          }
+        ]
+      }
+    ],
+
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/agent_manager.py || python3 ${PWD}/.claude/hooks/agent_manager.py",
+            "timeout": 5000,
+            "description": "Sub-agent lifecycle management and result coordination"
+          }
+        ]
+      },
+      {
+        "matcher": "*", 
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/wave_coordinator.py || python3 ${PWD}/.claude/hooks/wave_coordinator.py",
+            "timeout": 10000,
+            "description": "Wave coordination and sub-agent result integration"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/result_collector.py || python3 ${PWD}/.claude/hooks/result_collector.py",
+            "timeout": 5000,
+            "description": "Sub-agent result collection and quality validation"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/wave_performance_monitor.py || python3 ${PWD}/.claude/hooks/wave_performance_monitor.py",
+            "timeout": 5000,
+            "description": "Sub-agent performance monitoring and optimization"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/context_accumulator.py || python3 ${PWD}/.claude/hooks/context_accumulator.py",
+            "timeout": 5000,
+            "description": "Sub-agent context integration and compression"
+          }
+        ]
+      }
+    ],
+
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/wave_coordinator.py || python3 ${PWD}/.claude/hooks/wave_coordinator.py",
+            "timeout": 10000,
+            "description": "Final wave coordination and session completion"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/synthesis_engine.py || python3 ${PWD}/.claude/hooks/synthesis_engine.py",
+            "timeout": 10000,
+            "description": "Final compound intelligence synthesis and session summary"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/performance_monitor.py || python3 ${PWD}/.claude/hooks/performance_monitor.py",
+            "timeout": 5000,
+            "description": "Session performance analysis and optimization recommendations"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/quality_gates_coordinator.py || python3 ${PWD}/.claude/hooks/quality_gates_coordinator.py",
+            "timeout": 5000,
+            "description": "Final quality gates validation and compliance reporting"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/wave_performance_monitor.py || python3 ${PWD}/.claude/hooks/wave_performance_monitor.py",
+            "timeout": 5000,
+            "description": "Session-level performance metrics and wave analysis"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/context_accumulator.py || python3 ${PWD}/.claude/hooks/context_accumulator.py",
+            "timeout": 5000,
+            "description": "Final context persistence and session state storage"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/error_handler.py || python3 ${PWD}/.claude/hooks/error_handler.py",
+            "timeout": 5000,
+            "description": "Session error analysis and learning integration"
+          }
+        ]
+      }
+    ],
+
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/wave_performance_monitor.py || python3 ${PWD}/.claude/hooks/wave_performance_monitor.py",
+            "timeout": 3000,
+            "description": "Real-time notification processing and performance tracking"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '$DATA' | python3 ~/.claude/hooks/orchestration_engine.py || python3 ${PWD}/.claude/hooks/orchestration_engine.py",
+            "timeout": 3000,
+            "description": "Orchestration engine notification processing and system coordination"
+          }
+        ]
+      }
+    ]
+  },
+
+  "mcp": {
+    "servers": {
+      "sequential-thinking": {
+        "command": "mcp-server-sequential-thinking",
+        "args": [],
+        "description": "Multi-step reasoning and sequential analysis for complex problem-solving",
+        "scope": "user"
+      },
+      "context7": {
+        "command": "mcp-server-context7", 
+        "args": [],
+        "description": "Documentation and framework pattern analysis for development contexts",
+        "scope": "user"
+      },
+      "magic": {
+        "command": "mcp-server-magic",
+        "args": [],
+        "description": "UI component generation and design system integration",
+        "scope": "user"
+      },
+      "playwright": {
+        "command": "mcp-server-playwright",
+        "args": [],
+        "description": "Browser automation, testing, and performance analysis",
+        "scope": "user"
+      },
+      "puppeteer": {
+        "command": "mcp-server-puppeteer",
+        "args": [],
+        "description": "Browser automation and web interaction capabilities",
+        "scope": "user"
+      }
+    },
+    "defaultTimeout": 30000,
+    "retryAttempts": 3,
+    "enableFallbacks": true
+  },
+
+  "superclaude": {
+    "version": "3.0.0",
+    "framework_enabled": true,
+    "hooks_directory": "~/.claude/hooks",
+    "fallback_directory": "${PWD}/.claude/hooks",
+    "wave_mode": {
+      "enabled": true,
+      "auto_detection": true,
+      "max_waves": 5,
+      "performance_threshold": 100,
+      "validation_enabled": true
+    },
+    "performance": {
+      "target_execution_time": 100,
+      "monitoring_enabled": true,
+      "optimization_enabled": true,
+      "compression_enabled": true
+    },
+    "quality_gates": {
+      "enabled": true,
+      "validation_steps": 8,
+      "coverage_threshold": 0.8,
+      "compliance_required": true
+    },
+    "intelligence": {
+      "compound_enabled": true,
+      "context_accumulation": true,
+      "synthesis_engine": true,
+      "learning_enabled": true
+    }
+  }
+}

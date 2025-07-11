@@ -10,11 +10,6 @@ SuperClaude/
 ├── Commands/       # Slash command definitions and documentation
 ├── Core/           # Core framework files (COMMANDS.md, FLAGS.md, etc.)
 ├── Settings/       # Configuration files and user profiles
-├── Templates/      # Template files for framework components
-├── Scripts/        # Utility and installation scripts
-├── Tests/          # Test suites and validation scripts
-├── Docs/           # Documentation and planning files
-└── profiles/       # User profile configurations
 ```
 
 ## Core Components

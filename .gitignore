@@ -6,5 +6,5 @@ __pycache__/
 wave_context.json
 wave_performance_metrics.json
 error.log
-CLAUDE.md
+/CLAUDE.md
 .claude/

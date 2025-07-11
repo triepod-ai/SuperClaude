@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 #
-# SuperClaude Framework v3.0 - Installation Entry Point
+# SuperClaude Framework v3.0 - Interactive Installation Entry Point
 # 
-# This script checks system requirements and guides users through
-# the SuperClaude installation process.
+# This script provides a unified entry point for SuperClaude installation,
+# using a modular system with Python-based orchestration and interactive menus.
 #
 # Usage: ./install.sh [options]
 # Options:
 #   --skip-checks    Skip requirement checks (not recommended)
-#   --dev            Install in development mode
+#   --standard       Standard installation (copy files)
+#   --development    Development installation (symlinks)
 #   --update         Update existing installation
 #   --uninstall      Remove SuperClaude installation
 #   --help           Show this help message
@@ -19,8 +20,6 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_DIR="$SCRIPT_DIR"
 readonly CLAUDE_GLOBAL_DIR="$HOME/.claude"
-readonly MIN_PYTHON_VERSION="3.12"
-readonly MIN_NODE_VERSION="18"
 readonly VERSION="3.0.0"
 
 # Color codes for output
@@ -57,24 +56,43 @@ show_header() {
 # Display help
 show_help() {
     cat << EOF
-SuperClaude Framework v${VERSION} - Installation Script
+SuperClaude Framework v${VERSION} - Modular Installation Script
+
+DESCRIPTION:
+    Interactive installer for SuperClaude Framework with modular component
+    selection and comprehensive requirements checking.
 
 USAGE:
     ./install.sh [OPTIONS]
 
 OPTIONS:
-    --skip-checks    Skip system requirement checks (not recommended)
-    --dev            Install in development mode (symlinks instead of copies)
-    --update         Update existing SuperClaude installation
-    --uninstall      Remove SuperClaude installation
-    --help           Show this help message
+    --skip-checks      Skip system requirement checks (not recommended)
+    --standard         Standard installation (copy files to ~/.claude/)
+    --development      Development installation (symlinks for live development)
+    --update           Update existing installation
+    --uninstall        Remove SuperClaude installation
+    --help             Show this help message
+
+INSTALLATION FLOW:
+    1. Requirements Check    - Validates system dependencies
+    2. Interactive Menu     - Choose installation type and components
+    3. Component Selection  - Core, Hooks, Commands, MCP Servers
+    4. Installation         - Modular installation with progress tracking
+    5. Validation          - Post-install testing and verification
+
+COMPONENTS:
+    Core Framework      - Essential SuperClaude files and configuration
+    Hook System         - Event-driven enhancement with 15 specialized hooks
+    Commands Suite      - Enhanced slash commands with wave support
+    MCP Servers         - Sequential, Context7, Magic, Playwright, Puppeteer
 
 EXAMPLES:
-    ./install.sh                 # Standard installation
-    ./install.sh --update        # Update existing installation
-    ./install.sh --dev           # Development installation with symlinks
+    ./install.sh                    # Interactive installation
+    ./install.sh --standard         # Standard installation (non-interactive)
+    ./install.sh --development      # Development installation with symlinks
+    ./install.sh --update           # Update existing installation
 
-For more information, visit: https://github.com/yourusername/SuperClaude
+For more information: https://github.com/NomenAK/SuperClaude
 EOF
 }
 
@@ -83,205 +101,208 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
-# Compare version numbers
-version_ge() {
-    # Returns 0 if version $1 >= version $2
-    [ "$(printf '%s\n' "$1" "$2" | sort -V | head -n1)" = "$2" ]
-}
-
-# Check Python version
-check_python() {
-    log_info "Checking Python installation..."
+# Basic Python availability check (minimal requirement for running the installers)
+check_basic_python() {
+    log_info "Checking basic Python availability..."
     
     if ! command_exists python3; then
         log_error "Python 3 is not installed"
-        log_info "Please install Python ${MIN_PYTHON_VERSION} or higher"
-        log_info "Visit: https://www.python.org/downloads/"
+        echo
+        echo "SuperClaude requires Python 3.12+ to run the installation system."
+        echo
+        echo "Please install Python first:"
+        echo "  • Ubuntu/Debian: sudo apt update && sudo apt install python3"
+        echo "  • macOS: brew install python"
+        echo "  • Windows: Download from https://python.org"
+        echo "  • Official: https://www.python.org/downloads/"
+        echo
         return 1
     fi
     
-    local python_version=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))')
+    # Try to get Python version
+    local python_version
+    python_version=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:2])))' 2>/dev/null || echo "unknown")
     
-    if ! version_ge "$python_version" "$MIN_PYTHON_VERSION"; then
-        log_error "Python ${python_version} found, but ${MIN_PYTHON_VERSION}+ is required"
-        log_info "Please upgrade Python to ${MIN_PYTHON_VERSION} or higher"
-        return 1
-    fi
-    
-    log_success "Python ${python_version} found"
-    
-    # Check Python standard library modules
-    local modules=("json" "sys" "time" "threading" "pathlib" "logging" "asyncio" "os" "subprocess" "re" "typing")
-    local missing_modules=()
-    
-    for module in "${modules[@]}"; do
-        if ! python3 -c "import $module" 2>/dev/null; then
-            missing_modules+=("$module")
-        fi
-    done
-    
-    if [ ${#missing_modules[@]} -ne 0 ]; then
-        log_error "Missing Python standard library modules: ${missing_modules[*]}"
-        log_info "Your Python installation may be incomplete"
-        return 1
-    fi
-    
-    log_success "All required Python modules available"
-    return 0
-}
-
-# Check Node.js version
-check_nodejs() {
-    log_info "Checking Node.js installation..."
-    
-    if ! command_exists node; then
-        log_error "Node.js is not installed"
-        log_info "Please install Node.js ${MIN_NODE_VERSION} or higher"
-        log_info "Visit: https://nodejs.org/"
-        return 1
-    fi
-    
-    local node_version=$(node -v | sed 's/v//')
-    local major_version=$(echo "$node_version" | cut -d. -f1)
-    
-    if [ "$major_version" -lt "$MIN_NODE_VERSION" ]; then
-        log_error "Node.js ${node_version} found, but ${MIN_NODE_VERSION}+ is required"
-        log_info "Please upgrade Node.js to ${MIN_NODE_VERSION} or higher"
-        return 1
-    fi
-    
-    log_success "Node.js ${node_version} found"
-    
-    # Check npx
-    if ! command_exists npx; then
-        log_error "npx is not available"
-        log_info "npx should come with Node.js ${MIN_NODE_VERSION}+"
-        return 1
-    fi
-    
-    log_success "npx is available"
-    return 0
-}
-
-# Check Claude Code installation
-check_claude_code() {
-    log_info "Checking Claude Code installation..."
-    
-    if ! command_exists claude; then
-        log_error "Claude Code is not installed or not in PATH"
-        log_info "Please install Claude Code first"
-        log_info "Visit: https://docs.anthropic.com/claude-code/installation"
-        return 1
-    fi
-    
-    log_success "Claude Code is installed"
-    
-    # Check if Claude Code is authenticated
-    if ! claude --version >/dev/null 2>&1; then
-        log_warning "Claude Code may not be properly authenticated"
-        log_info "Run 'claude login' to authenticate"
+    if [ "$python_version" != "unknown" ]; then
+        log_success "Python $python_version found"
+    else
+        log_warning "Python 3 found but version could not be determined"
     fi
     
     return 0
 }
 
-# Check file system permissions
-check_permissions() {
-    log_info "Checking file system permissions..."
+# Run requirements check using Python script
+run_requirements_check() {
+    log_info "Running comprehensive requirements check..."
     
-    # Check if we can create directories in home
-    if ! mkdir -p "$CLAUDE_GLOBAL_DIR/test_permissions" 2>/dev/null; then
-        log_error "Cannot create directories in $CLAUDE_GLOBAL_DIR"
-        log_info "Please check your home directory permissions"
+    local requirements_script="$PROJECT_DIR/Scripts/requirements/check_requirements.py"
+    
+    if [ ! -f "$requirements_script" ]; then
+        log_error "Requirements checker not found: $requirements_script"
         return 1
     fi
     
-    # Clean up test directory
-    rmdir "$CLAUDE_GLOBAL_DIR/test_permissions" 2>/dev/null || true
-    
-    log_success "File system permissions OK"
-    return 0
-}
-
-# Check all requirements
-check_requirements() {
-    local errors=0
-    
-    echo -e "\n${BLUE}=== System Requirements Check ===${NC}\n"
-    
-    check_python || ((errors++))
-    check_nodejs || ((errors++))
-    check_claude_code || ((errors++))
-    check_permissions || ((errors++))
-    
-    echo ""
-    
-    if [ $errors -eq 0 ]; then
-        log_success "All system requirements met!"
+    # Run Python requirements checker
+    if python3 "$requirements_script" --project-dir "$PROJECT_DIR"; then
+        log_success "Requirements check passed"
         return 0
     else
-        log_error "System requirements not met. Please fix the issues above."
+        log_error "Requirements check failed"
         return 1
     fi
 }
 
-# Check for existing installation
-check_existing_installation() {
-    if [ -f "$CLAUDE_GLOBAL_DIR/settings.json" ] || [ -d "$CLAUDE_GLOBAL_DIR/hooks" ]; then
-        log_warning "Existing SuperClaude installation detected"
-        echo -e "\nOptions:"
-        echo "  1) Update existing installation"
-        echo "  2) Clean install (backup existing)"
-        echo "  3) Cancel"
-        echo -n "Choose an option [1-3]: "
-        read -r choice
-        
-        case $choice in
-            1) return 1 ;;  # Update
-            2) backup_existing_installation ;;
-            3) log_info "Installation cancelled"; exit 0 ;;
-            *) log_error "Invalid choice"; exit 1 ;;
-        esac
+# Run the main Python installation orchestrator
+run_main_installer() {
+    local installation_type="$1"
+    
+    log_info "Starting SuperClaude installation orchestrator..."
+    
+    local main_script="$PROJECT_DIR/Scripts/main.py"
+    
+    if [ ! -f "$main_script" ]; then
+        log_error "Main installer not found: $main_script"
+        return 1
     fi
+    
+    # Prepare arguments for main installer
+    local args=("--project-dir" "$PROJECT_DIR")
+    
+    if [ -n "$installation_type" ]; then
+        args+=("--installation-type" "$installation_type")
+    fi
+    
+    # Run main Python installer
+    if python3 "$main_script" "${args[@]}"; then
+        log_success "Installation completed successfully"
+        return 0
+    else
+        log_error "Installation failed"
+        return 1
+    fi
+}
+
+# Uninstall SuperClaude
+run_uninstaller() {
+    log_info "Starting SuperClaude uninstallation..."
+    
+    echo "This will remove SuperClaude Framework from your system."
+    echo
+    echo "The following will be removed:"
+    echo "  • $CLAUDE_GLOBAL_DIR (all framework files)"
+    echo "  • MCP server registrations"
+    echo "  • Environment configurations"
+    echo
+    
+    read -p "Are you sure you want to continue? [y/N]: " -r
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_info "Uninstallation cancelled"
+        return 0
+    fi
+    
+    # Remove Claude directory
+    if [ -d "$CLAUDE_GLOBAL_DIR" ]; then
+        log_info "Removing $CLAUDE_GLOBAL_DIR..."
+        rm -rf "$CLAUDE_GLOBAL_DIR"
+        log_success "SuperClaude files removed"
+    else
+        log_warning "SuperClaude directory not found: $CLAUDE_GLOBAL_DIR"
+    fi
+    
+    # Try to remove MCP servers
+    if command_exists claude; then
+        log_info "Removing MCP server registrations..."
+        
+        # List of MCP servers to remove
+        local servers=("sequential" "context7" "magic" "playwright" "puppeteer")
+        
+        for server in "${servers[@]}"; do
+            if claude mcp list -s user 2>/dev/null | grep -q "^$server\\s"; then
+                log_info "Removing MCP server: $server"
+                claude mcp remove "$server" -s user 2>/dev/null || true
+            fi
+        done
+        
+        log_success "MCP server cleanup completed"
+    else
+        log_warning "Claude CLI not available - MCP servers not removed"
+    fi
+    
+    log_success "SuperClaude Framework uninstalled successfully"
+    
+    echo
+    echo "Manual cleanup (if needed):"
+    echo "  • Check shell profile for SuperClaude environment variables"
+    echo "  • Remove any custom aliases or functions"
+    echo
+    
     return 0
 }
 
-# Backup existing installation
-backup_existing_installation() {
+# Update existing installation
+run_updater() {
+    log_info "Starting SuperClaude update..."
+    
+    # Check if SuperClaude is currently installed
+    if [ ! -f "$CLAUDE_GLOBAL_DIR/settings.json" ]; then
+        log_error "SuperClaude not found - cannot update"
+        log_info "Run './install.sh' for fresh installation"
+        return 1
+    fi
+    
+    # Backup current installation
     local backup_dir="$CLAUDE_GLOBAL_DIR/backup_$(date +%Y%m%d_%H%M%S)"
-    log_info "Backing up existing installation to $backup_dir"
+    log_info "Creating backup: $backup_dir"
     
     mkdir -p "$backup_dir"
+    cp -r "$CLAUDE_GLOBAL_DIR"/* "$backup_dir/" 2>/dev/null || true
     
-    [ -f "$CLAUDE_GLOBAL_DIR/settings.json" ] && cp "$CLAUDE_GLOBAL_DIR/settings.json" "$backup_dir/"
-    [ -d "$CLAUDE_GLOBAL_DIR/hooks" ] && cp -r "$CLAUDE_GLOBAL_DIR/hooks" "$backup_dir/"
+    log_success "Backup created: $backup_dir"
     
-    log_success "Backup completed"
-}
-
-# Main installation function
-run_installation() {
-    log_info "Starting SuperClaude installation..."
+    # Run installer in update mode
+    # For updates, we preserve the existing installation type
+    local existing_type="standard"
     
-    # Run Python installation script
-    if [ -f "$PROJECT_DIR/Scripts/install_core.py" ]; then
-        python3 "$PROJECT_DIR/Scripts/install_core.py" "$@"
+    # Try to detect existing installation type
+    if [ -L "$CLAUDE_GLOBAL_DIR/CLAUDE.md" ]; then
+        existing_type="development"
+        log_info "Detected development installation (symlinks)"
     else
-        # Fallback to bash script if Python script doesn't exist yet
-        bash "$PROJECT_DIR/Scripts/install_global_settings.sh"
+        log_info "Detected standard installation (copied files)"
+    fi
+    
+    # Run the main installer
+    if run_main_installer "$existing_type"; then
+        log_success "Update completed successfully"
+        log_info "Backup preserved at: $backup_dir"
+        return 0
+    else
+        log_error "Update failed"
+        log_info "Your original installation is backed up at: $backup_dir"
+        return 1
     fi
 }
 
 # Parse command line arguments
 parse_args() {
+    SKIP_CHECKS=false
+    INSTALLATION_TYPE=""
+    UPDATE_MODE=false
+    UNINSTALL_MODE=false
+    
     while [[ $# -gt 0 ]]; do
         case $1 in
             --skip-checks)
                 SKIP_CHECKS=true
                 shift
                 ;;
-            --dev)
-                DEV_MODE=true
+            --standard)
+                INSTALLATION_TYPE="standard"
+                shift
+                ;;
+            --development|--dev)
+                INSTALLATION_TYPE="development"
                 shift
                 ;;
             --update)
@@ -292,12 +313,13 @@ parse_args() {
                 UNINSTALL_MODE=true
                 shift
                 ;;
-            --help)
+            --help|-h)
                 show_help
                 exit 0
                 ;;
             *)
                 log_error "Unknown option: $1"
+                echo
                 show_help
                 exit 1
                 ;;
@@ -307,12 +329,6 @@ parse_args() {
 
 # Main execution
 main() {
-    # Initialize variables
-    SKIP_CHECKS=false
-    DEV_MODE=false
-    UPDATE_MODE=false
-    UNINSTALL_MODE=false
-    
     # Parse arguments
     parse_args "$@"
     
@@ -321,39 +337,61 @@ main() {
     
     # Handle uninstall
     if [ "$UNINSTALL_MODE" = true ]; then
-        log_info "Uninstalling SuperClaude..."
-        # TODO: Implement uninstall logic
-        log_error "Uninstall not yet implemented"
-        exit 1
+        run_uninstaller
+        return $?
     fi
     
-    # Check requirements unless skipped
+    # Handle update
+    if [ "$UPDATE_MODE" = true ]; then
+        run_updater
+        return $?
+    fi
+    
+    # Check basic Python availability first
+    if ! check_basic_python; then
+        echo "Installation cannot continue without Python."
+        echo "Please install Python 3.12+ and run this script again."
+        return 1
+    fi
+    
+    # Run requirements check (unless skipped)
     if [ "$SKIP_CHECKS" = false ]; then
-        if ! check_requirements; then
-            echo -e "\nInstallation cannot continue without meeting system requirements."
+        if ! run_requirements_check; then
+            echo
+            log_error "System requirements not met."
             echo "You can skip checks with --skip-checks, but this is not recommended."
-            exit 1
+            echo "Please install missing requirements and run this script again."
+            return 1
         fi
     else
         log_warning "Skipping system requirement checks (not recommended)"
     fi
     
-    # Check for existing installation
-    if [ "$UPDATE_MODE" = false ]; then
-        check_existing_installation
+    # Run main installation
+    if run_main_installer "$INSTALLATION_TYPE"; then
+        echo
+        log_success "🎉 SuperClaude Framework v${VERSION} installation complete!"
+        echo
+        echo "Next steps:"
+        echo "  1. Restart your terminal or run: source ~/.bashrc"
+        echo "  2. Verify installation: claude config list"
+        echo "  3. Test SuperClaude: /analyze --help"
+        echo "  4. Read documentation: ~/.claude/CLAUDE.md"
+        echo
+        return 0
+    else
+        echo
+        log_error "Installation failed. Please check the error messages above."
+        echo
+        echo "For help:"
+        echo "  • Check installation logs"
+        echo "  • Ensure all requirements are met"
+        echo "  • Try running with --skip-checks if necessary"
+        echo "  • Report issues at: https://github.com/NomenAK/SuperClaude/issues"
+        echo
+        return 1
     fi
-    
-    # Run installation
-    run_installation
-    
-    # Post-installation steps
-    echo -e "\n${BLUE}=== Post-Installation Steps ===${NC}\n"
-    log_info "1. Restart your terminal or run: source ~/.bashrc"
-    log_info "2. Verify installation: claude config list"
-    log_info "3. Test a SuperClaude command: /analyze --help"
-    
-    log_success "Installation completed successfully!"
 }
 
-# Run main function
+# Run main function with all arguments
 main "$@"

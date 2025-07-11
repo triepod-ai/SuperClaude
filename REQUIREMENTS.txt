@@ -1,0 +1,67 @@
+# SuperClaude Framework v3.0 - System Requirements
+# This file defines all system requirements for SuperClaude installation
+# Format: requirement_name=version_or_status
+
+[general]
+# Core System Requirements
+python_version=3.12
+node_version=18
+bash_version=4.0
+
+# Required Applications
+claude_code=required
+git=recommended
+npm=required_for_mcp
+
+# Python Standard Library Modules (should be available with Python 3.12+)
+python_modules=json,sys,time,threading,pathlib,logging,asyncio,os,subprocess,re,typing,shutil,argparse,dataclasses,enum,contextlib,collections,weakref
+
+# Node.js Tools
+npx=required_for_mcp
+
+# Platform-specific Requirements
+[linux]
+package_managers=apt,yum,dnf,pacman,zypper
+shell=bash
+
+[macos] 
+package_managers=brew,macports
+shell=bash,zsh
+
+[windows]
+wsl=required
+shell=bash
+
+# Optional but Recommended
+[optional]
+curl=recommended
+wget=recommended
+which=recommended
+
+# MCP Server Requirements (Node.js packages)
+[mcp_servers]
+sequential_thinking=mcp-server-sequential-thinking
+context7=mcp-server-context7
+magic=mcp-server-magic
+playwright=mcp-server-playwright
+puppeteer=mcp-server-puppeteer
+
+# API Keys Required
+[api_keys]
+magic=required_for_magic_server
+
+# Permissions Required
+[permissions]
+home_directory=read_write
+claude_directory=read_write_create
+npm_global=install_packages
+
+# Validation Commands
+[validation]
+python_check=python3 --version
+node_check=node --version
+npm_check=npm --version
+npx_check=npx --version
+claude_check=claude --version
+git_check=git --version
+bash_check=bash --version

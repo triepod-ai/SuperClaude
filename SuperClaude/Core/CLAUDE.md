@@ -1,4 +1,4 @@
-SuperClaude Entry Point
+# SuperClaude Entry Point
 
 @COMMANDS.md
 @FLAGS.md

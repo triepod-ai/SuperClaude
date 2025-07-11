@@ -1,0 +1,196 @@
+{
+  "core": {
+    "name": "Core Framework",
+    "description": "Essential SuperClaude framework files and configurations",
+    "required": true,
+    "recommended": true,
+    "dependencies": [],
+    "installer": "core_installer.py",
+    "files": [
+      "SuperClaude/Core/CLAUDE.md",
+      "SuperClaude/Core/COMMANDS.md", 
+      "SuperClaude/Core/FLAGS.md",
+      "SuperClaude/Core/MCP.md",
+      "SuperClaude/Core/MODES.md",
+      "SuperClaude/Core/ORCHESTRATOR.md",
+      "SuperClaude/Core/PERSONAS.md",
+      "SuperClaude/Core/PRINCIPLES.md",
+      "SuperClaude/Core/RULES.md",
+      "SuperClaude/Settings/settings.json"
+    ],
+    "target_files": [
+      "~/.claude/CLAUDE.md",
+      "~/.claude/COMMANDS.md",
+      "~/.claude/FLAGS.md", 
+      "~/.claude/MCP.md",
+      "~/.claude/MODES.md",
+      "~/.claude/ORCHESTRATOR.md",
+      "~/.claude/PERSONAS.md",
+      "~/.claude/PRINCIPLES.md",
+      "~/.claude/RULES.md",
+      "~/.claude/settings.json"
+    ],
+    "post_install": [
+      "Validate settings.json configuration",
+      "Ensure environment variables are set",
+      "Test basic framework functionality"
+    ]
+  },
+  
+  "hooks": {
+    "name": "Hook System",
+    "description": "Event-driven enhancement system with 15 specialized hooks",
+    "required": false,
+    "recommended": true,
+    "dependencies": ["core"],
+    "installer": "hooks_installer.py",
+    "files": [
+      "SuperClaude/Hooks/__init__.py",
+      "SuperClaude/Hooks/agent_manager.py",
+      "SuperClaude/Hooks/context_accumulator.py",
+      "SuperClaude/Hooks/error_handler.py",
+      "SuperClaude/Hooks/hook_registry.py",
+      "SuperClaude/Hooks/mcp_coordinator.py",
+      "SuperClaude/Hooks/orchestration_engine.py",
+      "SuperClaude/Hooks/performance_monitor.py",
+      "SuperClaude/Hooks/quality_gates_coordinator.py",
+      "SuperClaude/Hooks/quality_validator.py",
+      "SuperClaude/Hooks/result_collector.py",
+      "SuperClaude/Hooks/synthesis_engine.py",
+      "SuperClaude/Hooks/task_manager.py",
+      "SuperClaude/Hooks/token_optimizer.py",
+      "SuperClaude/Hooks/wave_coordinator.py",
+      "SuperClaude/Hooks/wave_performance_monitor.py",
+      "SuperClaude/Hooks/wave_sequencer.py"
+    ],
+    "target_directory": "~/.claude/hooks/",
+    "post_install": [
+      "Test hook import functionality",
+      "Validate hook registry configuration",
+      "Check hook event binding"
+    ]
+  },
+  
+  "commands": {
+    "name": "Commands Suite",
+    "description": "Enhanced slash commands with wave and sub-agent support",
+    "required": false,
+    "recommended": true,
+    "dependencies": ["core"],
+    "installer": "commands_installer.py",
+    "files": [
+      "SuperClaude/Commands/analyze.md",
+      "SuperClaude/Commands/build.md",
+      "SuperClaude/Commands/cleanup.md",
+      "SuperClaude/Commands/design.md",
+      "SuperClaude/Commands/document.md",
+      "SuperClaude/Commands/estimate.md",
+      "SuperClaude/Commands/explain.md",
+      "SuperClaude/Commands/git.md",
+      "SuperClaude/Commands/improve.md",
+      "SuperClaude/Commands/index.md",
+      "SuperClaude/Commands/load.md",
+      "SuperClaude/Commands/spawn.md",
+      "SuperClaude/Commands/task.md",
+      "SuperClaude/Commands/test.md",
+      "SuperClaude/Commands/troubleshoot.md"
+    ],
+    "target_directory": "~/.claude/commands/",
+    "post_install": [
+      "Validate command syntax and structure",
+      "Test command discovery and loading",
+      "Check command dependencies"
+    ]
+  },
+  
+  "mcp": {
+    "name": "MCP Servers",
+    "description": "Model Context Protocol servers for enhanced capabilities",
+    "required": false,
+    "recommended": false,
+    "dependencies": ["core"],
+    "installer": "mcp_installer.py",
+    "components": {
+      "sequential": {
+        "name": "Sequential Thinking",
+        "description": "Multi-step reasoning and complex problem-solving",
+        "command": "mcp-server-sequential-thinking",
+        "package": "mcp-server-sequential-thinking",
+        "api_key": false,
+        "recommended": true
+      },
+      "context7": {
+        "name": "Context7 Documentation",
+        "description": "Documentation and framework pattern analysis",
+        "command": "mcp-server-context7",
+        "package": "mcp-server-context7", 
+        "api_key": false,
+        "recommended": true
+      },
+      "magic": {
+        "name": "Magic UI Components",
+        "description": "UI component generation and design systems",
+        "command": "mcp-server-magic",
+        "package": "mcp-server-magic",
+        "api_key": true,
+        "key_name": "MAGIC_API_KEY",
+        "key_description": "Magic API key for UI component generation",
+        "recommended": false
+      },
+      "playwright": {
+        "name": "Playwright Automation",
+        "description": "Browser automation and E2E testing capabilities",
+        "command": "mcp-server-playwright",
+        "package": "mcp-server-playwright",
+        "api_key": false,
+        "recommended": false
+      },
+      "puppeteer": {
+        "name": "Puppeteer Web Control",
+        "description": "Web interaction and automation capabilities",
+        "command": "mcp-server-puppeteer", 
+        "package": "mcp-server-puppeteer",
+        "api_key": false,
+        "recommended": false
+      }
+    },
+    "post_install": [
+      "Test MCP server connectivity",
+      "Validate server registration with Claude Code",
+      "Check API key configuration (if required)"
+    ]
+  },
+  
+  "profiles": {
+    "name": "Installation Profiles",
+    "description": "Pre-configured installation profiles for different use cases",
+    "required": false,
+    "recommended": false,
+    "dependencies": ["core"],
+    "installer": "profiles_installer.py",
+    "profiles": {
+      "minimal": {
+        "name": "Minimal Installation",
+        "description": "Core framework only",
+        "features": ["core"]
+      },
+      "standard": {
+        "name": "Standard Installation", 
+        "description": "Core framework + hooks + commands",
+        "features": ["core", "hooks", "commands"]
+      },
+      "developer": {
+        "name": "Developer Installation",
+        "description": "Everything except Magic (no API key required)",
+        "features": ["core", "hooks", "commands"],
+        "mcp_servers": ["sequential", "context7", "playwright", "puppeteer"]
+      },
+      "full": {
+        "name": "Full Installation",
+        "description": "Complete SuperClaude experience",
+        "features": ["core", "hooks", "commands", "mcp"],
+        "mcp_servers": ["sequential", "context7", "magic", "playwright", "puppeteer"]
+      }
+    }
+  }
+}

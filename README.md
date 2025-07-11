@@ -64,11 +64,6 @@ Hooks are configured in `settings.json` and respond to events:
 - `Stop` - Session end
 - `Notification` - System notifications
 
-## MCP Integration
-
-Four MCP servers provide specialized capabilities:
-
-```bash
 # Install MCP servers globally
 python Scripts/install_mcp_servers.py
 

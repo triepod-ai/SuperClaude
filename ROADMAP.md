@@ -38,6 +38,10 @@ This roadmap outlines the planned development path for SuperClaude Framework. Al
 
 ## 🔮 Medium-term Vision (v3.2-3.5 - 2025)
 
+### MCP Based Systems Migration
+- **Migrate SuperClaude to MCP** (Modular Command Pattern) architecture
+- **Individual MCP servers** for each feature module
+
 ### Advanced Intelligence Features
 - **Learning from user patterns** to improve orchestration
 - **Predictive task delegation** based on project characteristics

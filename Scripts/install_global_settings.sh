@@ -10,7 +10,6 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 CLAUDE_GLOBAL_DIR="$HOME/.claude"
 CLAUDE_HOOKS_DIR="$CLAUDE_GLOBAL_DIR/hooks"
 CLAUDE_COMMANDS_DIR="$CLAUDE_GLOBAL_DIR/commands"
-CLAUDE_CORE_DIR="$CLAUDE_GLOBAL_DIR/core"
 
 echo "🚀 SuperClaude Framework v3.0 - Global Settings Installation"
 echo "============================================================="
@@ -20,7 +19,6 @@ echo "📁 Creating global Claude Code directory structure..."
 mkdir -p "$CLAUDE_GLOBAL_DIR"
 mkdir -p "$CLAUDE_HOOKS_DIR"
 mkdir -p "$CLAUDE_COMMANDS_DIR"
-mkdir -p "$CLAUDE_CORE_DIR"
 
 # Copy settings.json to global location
 echo "⚙️  Installing global settings.json..."
@@ -63,15 +61,15 @@ else
     exit 1
 fi
 
-# Copy all core files to global location
+# Copy all core files to global location root
 echo "🏗️  Installing SuperClaude core files globally..."
 if [ -d "$PROJECT_DIR/SuperClaude/Core" ]; then
-    # Copy all markdown core files
-    cp "$PROJECT_DIR/SuperClaude/Core"/*.md "$CLAUDE_CORE_DIR/"
+    # Copy all markdown core files to .claude root
+    cp "$PROJECT_DIR/SuperClaude/Core"/*.md "$CLAUDE_GLOBAL_DIR/"
     
-    echo "✅ SuperClaude core files installed at: $CLAUDE_CORE_DIR"
+    echo "✅ SuperClaude core files installed at: $CLAUDE_GLOBAL_DIR"
     echo "📋 Installed core files:"
-    ls -la "$CLAUDE_CORE_DIR"/*.md | awk '{print "   - " $9}' | sed "s|$CLAUDE_CORE_DIR/||g" | sed 's/.md$//'
+    ls -la "$CLAUDE_GLOBAL_DIR"/*.md | grep -v settings.json | awk '{print "   - " $9}' | sed "s|$CLAUDE_GLOBAL_DIR/||g" | sed 's/.md$//'
 else
     echo "❌ Error: SuperClaude/Core directory not found in project"
     exit 1
@@ -142,8 +140,8 @@ else
     VALIDATION_PASSED=false
 fi
 
-# Check core directory
-CORE_COUNT=$(ls -1 "$CLAUDE_CORE_DIR"/*.md 2>/dev/null | wc -l)
+# Check core files in root directory
+CORE_COUNT=$(ls -1 "$CLAUDE_GLOBAL_DIR"/*.md 2>/dev/null | grep -v settings.json | wc -l)
 if [ "$CORE_COUNT" -ge 5 ]; then
     echo "✅ All SuperClaude core files installed ($CORE_COUNT files)"
 else
@@ -166,7 +164,7 @@ if [ "$VALIDATION_PASSED" = true ]; then
     echo "   - Global settings: $CLAUDE_GLOBAL_DIR/settings.json"
     echo "   - Global hooks: $CLAUDE_HOOKS_DIR/"
     echo "   - Global commands: $CLAUDE_COMMANDS_DIR/"
-    echo "   - Global core: $CLAUDE_CORE_DIR/"
+    echo "   - Global core files: $CLAUDE_GLOBAL_DIR/*.md"
     echo "   - Project-specific overrides: .claude/settings.local.json"
     echo ""
     echo "🚀 SuperClaude Framework is now available globally across all projects!"

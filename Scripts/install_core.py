@@ -41,8 +41,7 @@ class SuperClaudeInstaller:
         directories = [
             self.claude_dir,
             self.claude_dir / "hooks",
-            self.claude_dir / "commands",
-            self.claude_dir / "core"
+            self.claude_dir / "commands"
         ]
         
         for directory in directories:
@@ -118,11 +117,11 @@ class SuperClaudeInstaller:
         return True
 
     def install_core_files(self):
-        """Install SuperClaude core files to global directory."""
+        """Install SuperClaude core files to global directory root."""
         self.log_info("Installing SuperClaude core files...")
         
         source_core = self.project_dir / "SuperClaude" / "Core"
-        target_core = self.claude_dir / "core"
+        target_core = self.claude_dir  # Install directly to .claude/ root
         
         if not source_core.exists():
             self.log_error(f"Source core directory not found: {source_core}")
@@ -254,9 +253,10 @@ class SuperClaudeInstaller:
             self.log_error(f"Missing commands - expected at least 10, found {len(command_files)}")
             validation_passed = False
             
-        # Check core files
-        core_dir = self.claude_dir / "core"
-        core_files = list(core_dir.glob("*.md"))
+        # Check core files (in root directory)
+        core_files = list(self.claude_dir.glob("*.md"))
+        # Filter out settings.json and other non-core files
+        core_files = [f for f in core_files if f.name not in ['settings.json']]
         
         if len(core_files) >= 5:  # Minimum expected
             self.log_success(f"SuperClaude core files installed ({len(core_files)} files)")
@@ -310,7 +310,7 @@ class SuperClaudeInstaller:
             print(f"   - Global settings: {self.claude_dir}/settings.json")
             print(f"   - Global hooks: {self.claude_dir}/hooks/")
             print(f"   - Global commands: {self.claude_dir}/commands/")
-            print(f"   - Global core: {self.claude_dir}/core/")
+            print(f"   - Global core files: {self.claude_dir}/*.md")
             print("   - Project-specific overrides: .claude/settings.local.json")
             print("\n🚀 SuperClaude Framework is now available globally across all projects!")
             

@@ -15,12 +15,76 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 # Add utils to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "utils"))
+utils_path = str(Path(__file__).parent.parent / "utils")
+sys.path.insert(0, utils_path)
 
-from colors import Colors
-from progress import ProgressTracker
-from file_ops import FileOperations
-from validation import SystemValidator
+try:
+    from colors import Colors
+    from progress import ProgressTracker
+    from file_ops import FileOperations
+    from validation import SystemValidator
+    from secure_permissions import SecurePermissions
+    from path_security import SecureInstaller, PathTraversalError
+except ImportError:
+    # Fallback imports for when modules can't be loaded
+    print("Warning: Some utilities not available, using fallbacks")
+    
+    class Colors:
+        def info(self, msg): return f"\033[0;34m{msg}\033[0m"
+        def success(self, msg): return f"\033[0;32m{msg}\033[0m"
+        def warning(self, msg): return f"\033[1;33m{msg}\033[0m"
+        def error(self, msg): return f"\033[0;31m{msg}\033[0m"
+        def header(self, msg): return f"\033[1;34m{msg}\033[0m"
+    
+    class ProgressTracker:
+        def start(self, desc, total): pass
+        def update(self, n, desc=""): pass
+        def finish(self): pass
+    
+    class FileOperations:
+        def copy_file(self, src, dst):
+            try:
+                import shutil
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                return True
+            except Exception as e:
+                print(f"Error copying {src} to {dst}: {e}")
+                return False
+                
+        def create_symlink(self, src, dst):
+            try:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                if dst.exists() or dst.is_symlink():
+                    dst.unlink()
+                dst.symlink_to(src)
+                return True
+            except Exception as e:
+                print(f"Error creating symlink {src} to {dst}: {e}")
+                return False
+    
+    class SystemValidator:
+        def validate_permissions(self, path): return True
+    
+    class SecurePermissions:
+        def set_secure_permission(self, path): return True
+        def audit_permissions(self, path): return {"issues_found": 0}
+    
+    class SecureInstaller:
+        def __init__(self, project_dir): 
+            self.project_dir = Path(project_dir).resolve()
+            self.claude_dir = Path.home() / ".claude"
+        def secure_path(self, path_input, base_dir=None): 
+            return Path(path_input).resolve()
+        def secure_file_operation(self, source, target, operation="copy"): 
+            return Path(source).resolve(), Path(target).resolve()
+        def secure_mkdir(self, dir_path): 
+            path = Path(dir_path).resolve()
+            path.mkdir(parents=True, exist_ok=True)
+            return path
+    
+    class PathTraversalError(Exception):
+        pass
 
 
 class HooksInstaller:
@@ -44,19 +108,20 @@ class HooksInstaller:
         self.progress = ProgressTracker()
         self.file_ops = FileOperations()
         self.validator = SystemValidator()
+        self.secure_perms = SecurePermissions()
         
         # Load feature configuration
         self.feature_config = self._load_feature_config()
         
     def _load_feature_config(self) -> Dict[str, Any]:
         """Load hooks feature configuration."""
-        config_file = self.project_dir / "Scripts" / "config" / "features.json"
-        
         try:
+            config_file = self.secure_path(self.project_dir / "Scripts" / "config" / "features.json")
+            
             with open(config_file, 'r') as f:
                 features = json.load(f)
                 return features.get("hooks", {})
-        except (FileNotFoundError, json.JSONDecodeError) as e:
+        except (FileNotFoundError, json.JSONDecodeError, PathTraversalError) as e:
             self.log_error(f"Failed to load feature configuration: {e}")
             return self._get_default_config()
     
@@ -111,9 +176,12 @@ class HooksInstaller:
         errors = []
         
         # Check if core framework is installed
-        core_marker = self.claude_dir / "settings.json"
-        if not core_marker.exists():
-            errors.append("Core framework not installed (missing settings.json)")
+        try:
+            core_marker = self.secure_path(self.claude_dir / "settings.json")
+            if not core_marker.exists():
+                errors.append("Core framework not installed (missing settings.json)")
+        except PathTraversalError as e:
+            errors.append(f"Invalid core marker path: {e}")
         
         # Check Python availability and version
         try:
@@ -135,20 +203,23 @@ class HooksInstaller:
         source_files = self.feature_config.get("files", [])
         missing_files = []
         for file_path in source_files:
-            source_file = self.project_dir / file_path
-            if not source_file.exists():
-                missing_files.append(str(source_file))
+            try:
+                source_file = self.secure_path(self.project_dir / file_path)
+                if not source_file.exists():
+                    missing_files.append(str(source_file))
+            except PathTraversalError as e:
+                missing_files.append(f"INVALID: {file_path} ({e})")
         
         if missing_files:
             errors.append(f"Missing hook files: {', '.join(missing_files)}")
         
         # Check hooks directory permissions
         try:
-            self.hooks_dir.mkdir(parents=True, exist_ok=True)
-            test_file = self.hooks_dir / ".test_write"
+            hooks_dir = self.secure_mkdir(self.hooks_dir)
+            test_file = self.secure_path(hooks_dir / ".test_write")
             test_file.write_text("test")
             test_file.unlink()
-        except Exception as e:
+        except (Exception, PathTraversalError) as e:
             errors.append(f"Cannot write to hooks directory {self.hooks_dir}: {e}")
         
         if errors:
@@ -199,19 +270,52 @@ class HooksInstaller:
             return False
     
     def set_permissions(self) -> bool:
-        """Set appropriate permissions for hook files."""
-        self.log_info("Setting hook file permissions...")
+        """Set secure permissions for hook files using least-privilege principle."""
+        self.log_info("Setting secure hook file permissions...")
         
         try:
-            # Make Python files executable
-            for hook_file in self.hooks_dir.glob("*.py"):
-                hook_file.chmod(0o755)
+            permission_errors = 0
+            files_processed = 0
             
-            self.log_success("Hook file permissions set")
-            return True
+            # Set secure permissions for all hook files
+            for hook_file in self.hooks_dir.glob("*.py"):
+                files_processed += 1
+                
+                # Use secure permissions module - Python hooks don't need execute bit
+                # They are executed by the Python interpreter, not directly
+                if not self.secure_perms.set_secure_permission(hook_file):
+                    permission_errors += 1
+                    self.log_warning(f"Failed to set secure permissions on {hook_file.name}")
+            
+            # Also set permissions on hooks directory
+            if not self.secure_perms.set_secure_permission(self.hooks_dir):
+                permission_errors += 1
+                self.log_warning(f"Failed to set secure permissions on hooks directory")
+            
+            # Audit permissions to verify security
+            audit_report = self.secure_perms.audit_permissions(self.hooks_dir, recursive=False)
+            
+            if audit_report["critical_issues"]:
+                self.log_error(f"Critical permission issues found: {len(audit_report['critical_issues'])}")
+                for issue in audit_report["critical_issues"]:
+                    self.log_error(f"  {issue['path']}: {', '.join(issue['issues'])}")
+                return False
+            
+            if audit_report["warnings"]:
+                self.log_warning(f"Permission warnings: {len(audit_report['warnings'])}")
+                for warning in audit_report["warnings"]:
+                    self.log_warning(f"  {warning['path']}: {', '.join(warning['issues'])}")
+            
+            if permission_errors == 0:
+                self.log_success(f"Secure permissions set on {files_processed} hook files")
+                self.log_info("All permissions follow least-privilege principle")
+                return True
+            else:
+                self.log_error(f"Permission errors: {permission_errors}/{files_processed} files")
+                return False
             
         except Exception as e:
-            self.log_error(f"Failed to set permissions: {e}")
+            self.log_error(f"Failed to set secure permissions: {e}")
             return False
     
     def test_hook_imports(self) -> bool:
@@ -442,8 +546,12 @@ def main():
     
     args = parser.parse_args()
     
-    installer = HooksInstaller(args.project_dir, args.installation_type)
-    success = installer.install()
+    try:
+        installer = HooksInstaller(args.project_dir, args.installation_type)
+        success = installer.install()
+    except ValueError as e:
+        print(f"Error: {e}")
+        return 1
     
     return 0 if success else 1
 

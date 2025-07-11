@@ -19,6 +19,24 @@ import signal
 from contextlib import contextmanager
 from functools import wraps
 
+# Import secure permissions module
+try:
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent / "Scripts" / "utils"))
+    from secure_permissions import SecurePermissions, FileType
+except ImportError:
+    # Fallback for when secure_permissions is not available
+    class SecurePermissions:
+        def set_secure_permission(self, path, requested_permission=None):
+            try:
+                if requested_permission:
+                    os.chmod(path, requested_permission)
+                else:
+                    # Use 0o644 as fallback for regular files
+                    os.chmod(path, 0o644)
+                return True
+            except Exception:
+                return False
+
 class WaveSystemError(Exception):
     """Base exception for wave system errors"""
     pass
@@ -48,6 +66,7 @@ class ErrorRecoverySystem:
         self.backup_dir = base_path / "backups"
         self.error_log = base_path / "error.log"
         self.timeout = 60  # seconds
+        self.secure_perms = SecurePermissions()
         
         # Ensure backup directory exists
         self.backup_dir.mkdir(exist_ok=True)
@@ -188,18 +207,24 @@ class ErrorRecoverySystem:
         return self._create_emergency_context()
     
     def _recover_permission_error(self, error_context: Dict[str, Any]) -> Dict[str, Any]:
-        """Recover from permission error"""
+        """Recover from permission error using secure permission system"""
         self.log_error("permission_error", "Permission error detected")
         
-        # Try to fix permissions
+        # Try to fix permissions using secure permission system
         try:
-            os.chmod(self.context_file, 0o644)
-            with open(self.context_file, 'r') as f:
-                return json.load(f)
-        except Exception:
-            pass
+            # Use secure permissions to fix the context file
+            if self.secure_perms.set_secure_permission(self.context_file):
+                self.log_error("permission_recovery", f"Fixed permissions on {self.context_file}")
+                
+                # Try to read the file now
+                with open(self.context_file, 'r') as f:
+                    return json.load(f)
+            else:
+                self.log_error("permission_recovery", f"Failed to fix permissions on {self.context_file}")
+        except Exception as e:
+            self.log_error("permission_recovery", f"Permission recovery failed: {e}")
         
-        # Create new context in temp location
+        # Create new context in temp location with secure permissions
         return self._create_emergency_context()
     
     def _recover_timeout_error(self, error_context: Dict[str, Any]) -> Dict[str, Any]:

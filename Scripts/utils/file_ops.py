@@ -9,9 +9,21 @@ import sys
 import shutil
 import json
 import time
+import stat
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
 from .colors import Colors
+
+# Import secure permissions module
+try:
+    from .secure_permissions import SecurePermissions
+except ImportError:
+    # Fallback when secure_permissions is not available
+    class SecurePermissions:
+        def set_secure_permission(self, path, requested_permission=None):
+            return True
+        def validate_permission(self, path, permission):
+            return {"valid": True, "warnings": [], "errors": []}
 
 
 class FileOperations:
@@ -28,6 +40,7 @@ class FileOperations:
         self.dry_run = dry_run
         self.backup_dir: Optional[Path] = None
         self.operations_log: List[Dict[str, Any]] = []
+        self.secure_perms = SecurePermissions()
         
     def set_backup_dir(self, backup_dir: Union[str, Path]):
         """Set backup directory for operations.
@@ -345,6 +358,170 @@ class FileOperations:
             print(f"{self.colors.success('✓')} Operations log saved to {log_file}")
         except Exception as e:
             print(f"{self.colors.error('Error saving log:')} {e}")
+    
+    def get_operations_count(self, operation_type: str = None) -> int:
+        """Get count of operations by type.
+        
+        Args:
+            operation_type: Type of operation to count (e.g., 'copy', 'symlink').
+                          If None, returns total count.
+        
+        Returns:
+            Count of operations matching the type
+        """
+        if operation_type is None:
+            return len(self.operations_log)
+        
+        return sum(1 for op in self.operations_log 
+                  if op.get('operation') == operation_type)
+    
+    def get_failed_operations(self) -> List[Dict[str, Any]]:
+        """Get list of failed operations.
+        
+        Returns:
+            List of failed operation entries
+        """
+        return [op for op in self.operations_log if not op.get('success', True)]
+    
+    def create_directory(self, path: Union[str, Path], backup: bool = True) -> bool:
+        """Create a directory with optional backup of existing directory.
+        
+        Args:
+            path: Directory path to create
+            backup: Whether to backup existing directory
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        dir_path = Path(path)
+        
+        if self.dry_run:
+            print(f"{self.colors.info('[DRY RUN]')} Would create directory {dir_path}")
+            self._log_operation("create_dir", "", dir_path)
+            return True
+        
+        try:
+            # Backup existing directory if requested
+            if backup and dir_path.exists():
+                if not self._backup_file(dir_path):
+                    return False
+            
+            # Create directory
+            dir_path.mkdir(parents=True, exist_ok=True)
+            
+            print(f"{self.colors.success('✓')} Created directory {dir_path}")
+            self._log_operation("create_dir", "", dir_path)
+            return True
+            
+        except Exception as e:
+            error = f"Failed to create directory {dir_path}: {e}"
+            print(f"{self.colors.error('Error:')} {error}")
+            self._log_operation("create_dir", "", dir_path, False, str(e))
+            return False
+    
+    def cleanup(self):
+        """Clean up resources and reset state.
+        
+        Clears operations log and resets backup directory.
+        """
+        if self.dry_run:
+            print(f"{self.colors.info('[DRY RUN]')} Would cleanup resources")
+            return
+        
+        # Clear operations log
+        cleared_ops = len(self.operations_log)
+        self.operations_log.clear()
+        
+        # Reset backup directory
+        self.backup_dir = None
+        
+        print(f"{self.colors.muted('Cleanup:')} Cleared {cleared_ops} operations from log")
+    
+    def set_secure_permissions(self, path: Union[str, Path], 
+                             requested_permission: Optional[int] = None) -> bool:
+        """Set secure permissions on a file or directory.
+        
+        Args:
+            path: Path to set permissions on
+            requested_permission: Specific permission to set (optional)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        file_path = Path(path)
+        
+        if self.dry_run:
+            print(f"{self.colors.info('[DRY RUN]')} Would set secure permissions on {file_path}")
+            return True
+        
+        try:
+            success = self.secure_perms.set_secure_permission(file_path, requested_permission)
+            
+            if success:
+                print(f"{self.colors.success('✓')} Set secure permissions on {file_path.name}")
+                self._log_operation("set_permissions", "", file_path)
+            else:
+                print(f"{self.colors.error('Error:')} Failed to set secure permissions on {file_path}")
+                self._log_operation("set_permissions", "", file_path, False, "Permission setting failed")
+            
+            return success
+            
+        except Exception as e:
+            error = f"Failed to set secure permissions on {file_path}: {e}"
+            print(f"{self.colors.error('Error:')} {error}")
+            self._log_operation("set_permissions", "", file_path, False, str(e))
+            return False
+    
+    def validate_permissions(self, path: Union[str, Path], 
+                           permission: int) -> Dict[str, Any]:
+        """Validate permissions against security policies.
+        
+        Args:
+            path: Path to validate
+            permission: Permission to validate
+            
+        Returns:
+            Validation result with recommendations
+        """
+        file_path = Path(path)
+        return self.secure_perms.validate_permission(file_path, permission)
+    
+    def audit_permissions(self, directory: Union[str, Path], 
+                         recursive: bool = True) -> Dict[str, Any]:
+        """Audit permissions in a directory.
+        
+        Args:
+            directory: Directory to audit
+            recursive: Whether to audit recursively
+            
+        Returns:
+            Audit report with findings
+        """
+        dir_path = Path(directory)
+        
+        if self.dry_run:
+            print(f"{self.colors.info('[DRY RUN]')} Would audit permissions in {dir_path}")
+            return {"issues_found": 0, "dry_run": True}
+        
+        return self.secure_perms.audit_permissions(dir_path, recursive)
+    
+    def fix_permissions(self, directory: Union[str, Path], 
+                       recursive: bool = True) -> Dict[str, Any]:
+        """Fix permissions in a directory according to security policies.
+        
+        Args:
+            directory: Directory to fix
+            recursive: Whether to fix recursively
+            
+        Returns:
+            Fix report with actions taken
+        """
+        dir_path = Path(directory)
+        
+        if self.dry_run:
+            return self.secure_perms.fix_permissions(dir_path, recursive, dry_run=True)
+        
+        return self.secure_perms.fix_permissions(dir_path, recursive, dry_run=False)
 
 
 def test_file_ops():

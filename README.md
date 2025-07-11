@@ -2,6 +2,8 @@
 
 A modular enhancement framework for Claude Code that adds orchestration, quality assurance, and advanced capabilities through a hook-based architecture.
 
+*WORK IN PROGRESS*
+
 ## Why SuperClaude v3?
 
 The framework evolved to address several needs:

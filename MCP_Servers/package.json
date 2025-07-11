@@ -1,0 +1,70 @@
+{
+  "name": "@superclaude/mcp-servers",
+  "version": "1.0.0",
+  "description": "SuperClaude MCP server suite for enhanced Claude Code integration",
+  "private": true,
+  "workspaces": [
+    "shared",
+    "bridge-hooks", 
+    "superclaude-tasks",
+    "superclaude-orchestrator",
+    "superclaude-code",
+    "superclaude-intelligence",
+    "superclaude-ui",
+    "superclaude-quality",
+    "superclaude-performance"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "build:shared": "npm run build --workspace=@superclaude/shared",
+    "build:hooks": "npm run build --workspace=@superclaude/bridge-hooks",
+    "build:tasks": "npm run build --workspace=@superclaude/tasks-server",
+    "build:orchestrator": "npm run build --workspace=@superclaude/orchestrator-server",
+    "build:code": "npm run build --workspace=@superclaude/code-server",
+    "build:intelligence": "npm run build --workspace=@superclaude/intelligence-server",
+    "build:ui": "npm run build --workspace=@superclaude/ui-server",
+    "build:quality": "npm run build --workspace=@superclaude/quality-server",
+    "build:performance": "npm run build --workspace=@superclaude/performance-server",
+    "dev": "npm run dev --workspaces",
+    "test": "npm run test --workspaces",
+    "test:coverage": "npm run test:coverage --workspaces",
+    "lint": "npm run lint --workspaces",
+    "lint:fix": "npm run lint:fix --workspaces",
+    "type-check": "npm run type-check --workspaces",
+    "clean": "npm run clean --workspaces",
+    "install:all": "npm install && npm install --workspaces",
+    "publish:all": "npm run build && npm publish --workspaces",
+    "start:tasks": "npm start --workspace=@superclaude/tasks-server",
+    "start:orchestrator": "npm start --workspace=@superclaude/orchestrator-server",
+    "start:code": "npm start --workspace=@superclaude/code-server",
+    "start:intelligence": "npm start --workspace=@superclaude/intelligence-server",
+    "start:ui": "npm start --workspace=@superclaude/ui-server",
+    "start:quality": "npm start --workspace=@superclaude/quality-server",
+    "start:performance": "npm start --workspace=@superclaude/performance-server"
+  },
+  "keywords": [
+    "mcp",
+    "superclaude",
+    "claude-code",
+    "ai-tools",
+    "workflow",
+    "automation"
+  ],
+  "author": "SuperClaude Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.11.0",
+    "@typescript-eslint/parser": "^6.11.0",
+    "eslint": "^8.53.0",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/superclaude/mcp-servers.git"
+  }
+}

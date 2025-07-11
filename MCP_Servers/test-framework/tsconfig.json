@@ -1,0 +1,30 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["*"],
+      "@superclaude/shared": ["../shared/src/index.ts"],
+      "@superclaude/quality-server": ["../superclaude-quality/src/index.ts"],
+      "@superclaude/performance-server": ["../superclaude-performance/src/index.ts"],
+      "@superclaude/tasks-server": ["../superclaude-tasks/src/index.ts"],
+      "@superclaude/orchestrator-server": ["../superclaude-orchestrator/src/index.ts"],
+      "@superclaude/code-server": ["../superclaude-code/src/index.ts"],
+      "@superclaude/intelligence-server": ["../superclaude-intelligence/src/index.ts"],
+      "@superclaude/ui-server": ["../superclaude-ui/src/index.ts"],
+      "@superclaude/bridge-hooks": ["../bridge-hooks/src/index.ts"]
+    }
+  },
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "coverage",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
+}

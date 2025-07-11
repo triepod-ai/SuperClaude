@@ -69,7 +69,21 @@
     "SUPERCLAUDE_HOOKS_ENABLED": "true",
     "SUPERCLAUDE_WAVE_MODE": "auto",
     "SUPERCLAUDE_PERFORMANCE_TARGET": "100ms",
+    "SUPERCLAUDE_MIGRATION_MODE": "parallel",
+    "SUPERCLAUDE_MIGRATION_ENABLED": "true",
     "PYTHON_PATH": "${HOME}/.claude/hooks:${PYTHON_PATH}"
+  },
+
+  "migration": {
+    "enabled": true,
+    "mode": "parallel",
+    "version": "1.0.0",
+    "infrastructure": {
+      "hooks_enabled": true,
+      "mcp_enabled": true,
+      "fallback_enabled": true,
+      "monitoring_enabled": true
+    }
   },
 
   "includeCoAuthoredBy": true,

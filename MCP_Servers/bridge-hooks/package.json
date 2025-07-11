@@ -1,0 +1,56 @@
+{
+  "name": "@superclaude/bridge-hooks",
+  "version": "1.0.0",
+  "description": "Lightweight bridge hooks for SuperClaude integration with Claude Code",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src tests --ext .ts",
+    "lint:fix": "eslint src tests --ext .ts --fix",
+    "type-check": "tsc --noEmit",
+    "clean": "rimraf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "superclaude",
+    "bridge",
+    "hooks",
+    "integration",
+    "claude-code",
+    "lightweight"
+  ],
+  "author": "SuperClaude Team",
+  "license": "MIT",
+  "dependencies": {
+    "@superclaude/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.8",
+    "@types/node": "^20.8.10",
+    "@typescript-eslint/eslint-plugin": "^6.11.0",
+    "@typescript-eslint/parser": "^6.11.0",
+    "eslint": "^8.53.0",
+    "jest": "^29.7.0",
+    "rimraf": "^5.0.5",
+    "ts-jest": "^29.1.1",
+    "tsx": "^4.1.4",
+    "typescript": "^5.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/superclaude/mcp-servers.git",
+    "directory": "MCP_Servers/bridge-hooks"
+  }
+}

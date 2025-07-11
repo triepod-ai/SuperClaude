@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+env:
+  NODE_VERSION: '20'
+  REGISTRY_URL: 'https://npm.pkg.github.com'
+
+jobs:
+  publish-npm:
+    name: Publish to NPM
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        registry-url: ${{ env.REGISTRY_URL }}
+        cache: 'npm'
+        cache-dependency-path: MCP_Servers/package-lock.json
+        
+    - name: Install dependencies
+      working-directory: MCP_Servers
+      run: npm ci
+      
+    - name: Build all packages
+      working-directory: MCP_Servers
+      run: npm run build
+      
+    - name: Run tests
+      working-directory: MCP_Servers
+      run: npm run test
+      
+    - name: Publish packages
+      working-directory: MCP_Servers
+      run: npm run publish:all
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  create-docker-releases:
+    name: Create Docker Releases
+    runs-on: ubuntu-latest
+    needs: [publish-npm]
+    
+    strategy:
+      matrix:
+        server: [tasks, orchestrator, code, quality, performance]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Extract version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "release" ]; then
+          echo "version=${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Build and push release image
+      uses: docker/build-push-action@v5
+      with:
+        context: MCP_Servers
+        file: MCP_Servers/superclaude-${{ matrix.server }}/Dockerfile
+        push: true
+        tags: |
+          ghcr.io/${{ github.repository }}/superclaude-${{ matrix.server }}:${{ steps.version.outputs.version }}
+          ghcr.io/${{ github.repository }}/superclaude-${{ matrix.server }}:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  update-changelog:
+    name: Update Changelog
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Update CHANGELOG
+      run: |
+        echo "## [${{ github.event.release.tag_name }}] - $(date +%Y-%m-%d)" >> TEMP_CHANGELOG.md
+        echo "" >> TEMP_CHANGELOG.md
+        echo "${{ github.event.release.body }}" >> TEMP_CHANGELOG.md
+        echo "" >> TEMP_CHANGELOG.md
+        cat MCP_Servers/CHANGELOG.md >> TEMP_CHANGELOG.md
+        mv TEMP_CHANGELOG.md MCP_Servers/CHANGELOG.md
+        
+    - name: Commit changelog
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add MCP_Servers/CHANGELOG.md
+        git commit -m "Update CHANGELOG for ${{ github.event.release.tag_name }}" || exit 0
+        git push

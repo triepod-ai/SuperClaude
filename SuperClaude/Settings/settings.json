@@ -60,9 +60,6 @@
       "WebFetch(domain:localhost)",
       "WebFetch(domain:127.0.0.1)",
       "WebFetch(domain:0.0.0.0)"
-    ],
-    "additionalDirectories": [
-      "~/.claude"
     ]
   },
 

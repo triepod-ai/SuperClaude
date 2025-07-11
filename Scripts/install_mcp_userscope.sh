@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# add_mcp_servers_user_scope.sh
+# install_mcp_userscope.sh
 # -----------------------------------------------------------------------------
+# SuperClaude Framework v3.0 - MCP Server Installation Script
+# 
 # Registers the MCP servers for SuperClaude Framework into your *user* (global) 
 # scope so they are always available in any Claude Code session.
 # -----------------------------------------------------------------------------
 # Usage:
-#   chmod +x add_mcp_servers_user_scope.sh
-#   ./add_mcp_servers_user_scope.sh [--dry-run]
+#   chmod +x install_mcp_userscope.sh
+#   ./install_mcp_userscope.sh [--dry-run]
 #
 # Requirements:
 #   • claude CLI must be installed and authenticated.
@@ -111,6 +113,9 @@ add_server sequential-thinking -- npx -y @modelcontextprotocol/server-sequential
 
 # 4. Playwright — Microsoft's browser automation and testing framework
 add_server playwright -- npx -y playwright-mcp
+
+# 5. Puppeteer — Google's headless Chrome automation
+add_server puppeteer -- npx -y @executeautomation/puppeteer-mcp-server
 
 # ---------------------------------------------------------
 # Done

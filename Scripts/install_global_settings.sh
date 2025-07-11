@@ -9,6 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 CLAUDE_GLOBAL_DIR="$HOME/.claude"
 CLAUDE_HOOKS_DIR="$CLAUDE_GLOBAL_DIR/hooks"
+CLAUDE_COMMANDS_DIR="$CLAUDE_GLOBAL_DIR/commands"
+CLAUDE_CORE_DIR="$CLAUDE_GLOBAL_DIR/core"
 
 echo "🚀 SuperClaude Framework v3.0 - Global Settings Installation"
 echo "============================================================="
@@ -17,22 +19,24 @@ echo "============================================================="
 echo "📁 Creating global Claude Code directory structure..."
 mkdir -p "$CLAUDE_GLOBAL_DIR"
 mkdir -p "$CLAUDE_HOOKS_DIR"
+mkdir -p "$CLAUDE_COMMANDS_DIR"
+mkdir -p "$CLAUDE_CORE_DIR"
 
 # Copy settings.json to global location
 echo "⚙️  Installing global settings.json..."
-if [ -f "$PROJECT_DIR/settings.json" ]; then
-    cp "$PROJECT_DIR/settings.json" "$CLAUDE_GLOBAL_DIR/settings.json"
+if [ -f "$PROJECT_DIR/SuperClaude/Settings/settings.json" ]; then
+    cp "$PROJECT_DIR/SuperClaude/Settings/settings.json" "$CLAUDE_GLOBAL_DIR/settings.json"
     echo "✅ Global settings.json installed at: $CLAUDE_GLOBAL_DIR/settings.json"
 else
-    echo "❌ Error: settings.json not found in project directory"
+    echo "❌ Error: settings.json not found in SuperClaude/Settings directory"
     exit 1
 fi
 
 # Copy all hooks to global location
 echo "🪝 Installing SuperClaude hooks globally..."
-if [ -d "$PROJECT_DIR/.claude/hooks" ]; then
+if [ -d "$PROJECT_DIR/SuperClaude/Hooks" ]; then
     # Copy all Python hooks
-    cp "$PROJECT_DIR/.claude/hooks"/*.py "$CLAUDE_HOOKS_DIR/"
+    cp "$PROJECT_DIR/SuperClaude/Hooks"/*.py "$CLAUDE_HOOKS_DIR/"
     
     # Make hooks executable
     chmod +x "$CLAUDE_HOOKS_DIR"/*.py
@@ -41,7 +45,35 @@ if [ -d "$PROJECT_DIR/.claude/hooks" ]; then
     echo "📋 Installed hooks:"
     ls -la "$CLAUDE_HOOKS_DIR"/*.py | awk '{print "   - " $9}' | sed "s|$CLAUDE_HOOKS_DIR/||g"
 else
-    echo "❌ Error: .claude/hooks directory not found in project"
+    echo "❌ Error: SuperClaude/Hooks directory not found in project"
+    exit 1
+fi
+
+# Copy all commands to global location
+echo "📝 Installing SuperClaude commands globally..."
+if [ -d "$PROJECT_DIR/SuperClaude/Commands" ]; then
+    # Copy all markdown command files
+    cp "$PROJECT_DIR/SuperClaude/Commands"/*.md "$CLAUDE_COMMANDS_DIR/"
+    
+    echo "✅ SuperClaude commands installed at: $CLAUDE_COMMANDS_DIR"
+    echo "📋 Installed commands:"
+    ls -la "$CLAUDE_COMMANDS_DIR"/*.md | awk '{print "   - " $9}' | sed "s|$CLAUDE_COMMANDS_DIR/||g" | sed 's/.md$//'
+else
+    echo "❌ Error: SuperClaude/Commands directory not found in project"
+    exit 1
+fi
+
+# Copy all core files to global location
+echo "🏗️  Installing SuperClaude core files globally..."
+if [ -d "$PROJECT_DIR/SuperClaude/Core" ]; then
+    # Copy all markdown core files
+    cp "$PROJECT_DIR/SuperClaude/Core"/*.md "$CLAUDE_CORE_DIR/"
+    
+    echo "✅ SuperClaude core files installed at: $CLAUDE_CORE_DIR"
+    echo "📋 Installed core files:"
+    ls -la "$CLAUDE_CORE_DIR"/*.md | awk '{print "   - " $9}' | sed "s|$CLAUDE_CORE_DIR/||g" | sed 's/.md$//'
+else
+    echo "❌ Error: SuperClaude/Core directory not found in project"
     exit 1
 fi
 
@@ -97,7 +129,25 @@ HOOK_COUNT=$(ls -1 "$CLAUDE_HOOKS_DIR"/*.py 2>/dev/null | wc -l)
 if [ "$HOOK_COUNT" -ge 15 ]; then
     echo "✅ All SuperClaude hooks installed ($HOOK_COUNT hooks)"
 else
-    echo "❌ Missing hooks - expected 17, found $HOOK_COUNT"
+    echo "❌ Missing hooks - expected at least 15, found $HOOK_COUNT"
+    VALIDATION_PASSED=false
+fi
+
+# Check commands directory
+COMMAND_COUNT=$(ls -1 "$CLAUDE_COMMANDS_DIR"/*.md 2>/dev/null | wc -l)
+if [ "$COMMAND_COUNT" -ge 10 ]; then
+    echo "✅ All SuperClaude commands installed ($COMMAND_COUNT commands)"
+else
+    echo "❌ Missing commands - expected at least 10, found $COMMAND_COUNT"
+    VALIDATION_PASSED=false
+fi
+
+# Check core directory
+CORE_COUNT=$(ls -1 "$CLAUDE_CORE_DIR"/*.md 2>/dev/null | wc -l)
+if [ "$CORE_COUNT" -ge 5 ]; then
+    echo "✅ All SuperClaude core files installed ($CORE_COUNT files)"
+else
+    echo "❌ Missing core files - expected at least 5, found $CORE_COUNT"
     VALIDATION_PASSED=false
 fi
 
@@ -115,6 +165,8 @@ if [ "$VALIDATION_PASSED" = true ]; then
     echo "📖 Documentation:"
     echo "   - Global settings: $CLAUDE_GLOBAL_DIR/settings.json"
     echo "   - Global hooks: $CLAUDE_HOOKS_DIR/"
+    echo "   - Global commands: $CLAUDE_COMMANDS_DIR/"
+    echo "   - Global core: $CLAUDE_CORE_DIR/"
     echo "   - Project-specific overrides: .claude/settings.local.json"
     echo ""
     echo "🚀 SuperClaude Framework is now available globally across all projects!"

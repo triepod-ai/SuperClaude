@@ -11,6 +11,7 @@ import sys
 import json
 import argparse
 import subprocess
+import hashlib
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 
@@ -72,6 +73,86 @@ class PostInstallValidator:
     def log_error(self, message: str):
         """Log error message."""
         print(self.colors.error(f"[✗] {message}"))
+    
+    def _calculate_file_hash(self, file_path: Path) -> Optional[str]:
+        """Calculate SHA256 hash of a file.
+        
+        Args:
+            file_path: Path to file
+            
+        Returns:
+            SHA256 hash or None if error
+        """
+        try:
+            hash_obj = hashlib.sha256()
+            with open(file_path, 'rb') as f:
+                # Read in chunks to handle large files
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_obj.update(chunk)
+            return hash_obj.hexdigest()
+        except Exception as e:
+            self.log_error(f"Failed to calculate hash for {file_path}: {e}")
+            return None
+    
+    def _verify_file_integrity(self, file_path: Path, expected_hash: Optional[str] = None) -> bool:
+        """Verify file integrity.
+        
+        Args:
+            file_path: Path to file
+            expected_hash: Expected SHA256 hash (if known)
+            
+        Returns:
+            True if file integrity verified, False otherwise
+        """
+        if not file_path.exists():
+            return False
+        
+        # Check file permissions
+        try:
+            stat_info = file_path.stat()
+            
+            # Check if file is writable by others (potential security risk)
+            if stat_info.st_mode & 0o002:
+                self.log_warning(f"File {file_path} is world-writable")
+            
+            # For executable files, check execute permissions
+            if file_path.suffix == '.py' and not (stat_info.st_mode & 0o100):
+                self.log_warning(f"Python file {file_path} is not executable")
+        
+        except Exception as e:
+            self.log_error(f"Failed to check permissions for {file_path}: {e}")
+            return False
+        
+        # Calculate and optionally verify hash
+        actual_hash = self._calculate_file_hash(file_path)
+        if actual_hash is None:
+            return False
+        
+        if expected_hash and actual_hash != expected_hash:
+            self.log_error(f"Hash mismatch for {file_path}")
+            return False
+        
+        return True
+    
+    def _generate_integrity_manifest(self, directory: Path) -> Dict[str, str]:
+        """Generate integrity manifest for all files in directory.
+        
+        Args:
+            directory: Directory to scan
+            
+        Returns:
+            Dict mapping relative file paths to SHA256 hashes
+        """
+        manifest = {}
+        
+        for file_path in directory.rglob('*'):
+            if file_path.is_file() and not file_path.name.startswith('.'):
+                relative_path = file_path.relative_to(directory)
+                file_hash = self._calculate_file_hash(file_path)
+                if file_hash:
+                    manifest[str(relative_path)] = file_hash
+        
+        return manifest
     
     def validate_core_framework(self) -> Tuple[bool, Dict[str, Any]]:
         """Validate core framework installation."""
@@ -202,6 +283,18 @@ class PostInstallValidator:
         except Exception as e:
             results["tests"]["hook_imports"] = {"status": False, "message": f"Hook import test error: {e}"}
             results["overall_status"] = False
+        
+        # Test 4: Verify hook file integrity
+        integrity_issues = []
+        for hook_file in hooks_dir.glob("*.py"):
+            if not self._verify_file_integrity(hook_file):
+                integrity_issues.append(hook_file.name)
+        
+        if integrity_issues:
+            results["tests"]["hook_integrity"] = {"status": False, "message": f"Integrity issues: {', '.join(integrity_issues)}"}
+            results["overall_status"] = False
+        else:
+            results["tests"]["hook_integrity"] = {"status": True, "message": "Hook file integrity verified"}
         
         if results["overall_status"]:
             self.log_success("Hook system validation passed")
@@ -495,6 +588,68 @@ class PostInstallValidator:
         except Exception as e:
             self.log_error(f"Failed to save validation report: {e}")
     
+    def save_integrity_manifest(self):
+        """Save integrity manifest for installed files."""
+        manifest_file = self.claude_dir / "integrity_manifest.json"
+        
+        try:
+            # Generate manifests for key directories
+            manifests = {
+                "hooks": self._generate_integrity_manifest(self.claude_dir / "hooks"),
+                "commands": self._generate_integrity_manifest(self.claude_dir / "commands"),
+                "timestamp": str(Path().stat().st_mtime)
+            }
+            
+            with open(manifest_file, 'w') as f:
+                json.dump(manifests, f, indent=2)
+            
+            self.log_success(f"Integrity manifest saved to {manifest_file}")
+        
+        except Exception as e:
+            self.log_error(f"Failed to save integrity manifest: {e}")
+    
+    def verify_integrity_manifest(self) -> bool:
+        """Verify files against saved integrity manifest.
+        
+        Returns:
+            True if all files match manifest, False otherwise
+        """
+        manifest_file = self.claude_dir / "integrity_manifest.json"
+        
+        if not manifest_file.exists():
+            self.log_warning("No integrity manifest found")
+            return True  # Don't fail if no manifest exists
+        
+        try:
+            with open(manifest_file, 'r') as f:
+                manifests = json.load(f)
+            
+            all_valid = True
+            
+            # Verify hooks
+            if "hooks" in manifests:
+                hooks_dir = self.claude_dir / "hooks"
+                for rel_path, expected_hash in manifests["hooks"].items():
+                    file_path = hooks_dir / rel_path
+                    if not self._verify_file_integrity(file_path, expected_hash):
+                        self.log_error(f"Integrity check failed for hook: {rel_path}")
+                        all_valid = False
+            
+            # Verify commands
+            if "commands" in manifests:
+                commands_dir = self.claude_dir / "commands"
+                for rel_path, expected_hash in manifests["commands"].items():
+                    file_path = commands_dir / rel_path
+                    if not self._verify_file_integrity(file_path, expected_hash):
+                        self.log_error(f"Integrity check failed for command: {rel_path}")
+                        all_valid = False
+            
+            return all_valid
+        
+        except Exception as e:
+            self.log_error(f"Failed to verify integrity manifest: {e}")
+            return False
+    
     def show_validation_summary(self):
         """Show validation summary."""
         print(f"\n{self.colors.header('Post-Installation Validation Summary')}")
@@ -532,8 +687,17 @@ class PostInstallValidator:
             # Run comprehensive validation
             success = self.run_comprehensive_validation()
             
+            # Verify integrity if manifest exists
+            if not self.verify_integrity_manifest():
+                self.log_warning("File integrity verification failed")
+                success = False
+            
             # Generate and save report
             self.save_validation_report()
+            
+            # Save integrity manifest for future checks
+            if success:
+                self.save_integrity_manifest()
             
             # Show summary
             self.show_validation_summary()

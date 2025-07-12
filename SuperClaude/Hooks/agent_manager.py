@@ -68,6 +68,13 @@ class AgentManager:
         # Performance metrics
         self.performance_metrics = defaultdict(list)
         
+        # Parallel Task execution support (ENHANCED)
+        self.parallel_task_detection = {
+            'delegation_flags': ['--delegate', '--parallel-dirs', '--parallel-files', '--parallel-focus', '--multi-agent'],
+            'delegation_keywords': ['delegate', 'sub-agent', 'parallel task', 'parallel processing'],
+            'auto_thresholds': {'directories': 7, 'files': 50, 'domains': 3}
+        }
+        
     @contextmanager
     def performance_timer(self, operation: str):
         """Performance timing context manager"""
@@ -319,6 +326,70 @@ class AgentManager:
                 "failed_agents": failed_agents,
                 "total_time": time.time() - start_time
             }
+    
+    def detect_parallel_task_requirement(self, tool_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        ENHANCED: Detect when parallel Task execution is required
+        Returns guidance for Claude Code on parallel execution patterns
+        Performance target: <10ms execution
+        """
+        with self.performance_timer('parallel_task_detection'):
+            try:
+                tool_name = tool_data.get('name', '')
+                instruction = str(tool_data.get('arguments', {}))
+                
+                detection_result = {
+                    'parallel_required': False,
+                    'delegation_type': None,
+                    'execution_pattern': 'sequential',
+                    'guidance': {},
+                    'performance_target': None
+                }
+                
+                # Check for explicit delegation flags
+                for flag in self.parallel_task_detection['delegation_flags']:
+                    if flag in instruction:
+                        detection_result.update({
+                            'parallel_required': True,
+                            'delegation_type': 'explicit_flag',
+                            'execution_pattern': 'parallel_tasks_single_response',
+                            'guidance': {
+                                'instruction': 'CRITICAL: Create multiple Task calls in SINGLE response',
+                                'pattern': 'Task(scope1), Task(scope2), Task(scope3) simultaneously',
+                                'avoid': 'Sequential Task execution with wait intervals',
+                                'performance_target': '40-70% time reduction through parallelization'
+                            },
+                            'performance_target': 0.4  # 40% time reduction minimum
+                        })
+                        break
+                
+                # Check for delegation keywords
+                if not detection_result['parallel_required']:
+                    for keyword in self.parallel_task_detection['delegation_keywords']:
+                        if keyword in instruction.lower():
+                            detection_result.update({
+                                'parallel_required': True,
+                                'delegation_type': 'keyword_detected',
+                                'execution_pattern': 'parallel_tasks_single_response',
+                                'guidance': {
+                                    'instruction': 'DETECTED: Delegation request requires parallel Task execution',
+                                    'pattern': 'Multiple Task calls in single response for true parallelization',
+                                    'avoid': 'Sequential task processing',
+                                    'performance_target': '40-70% time reduction expected'
+                                },
+                                'performance_target': 0.4
+                            })
+                            break
+                
+                # Log detection results for monitoring
+                if detection_result['parallel_required']:
+                    logger.info(f"Parallel Task execution required: {detection_result['delegation_type']} - {detection_result['guidance']['instruction']}")
+                
+                return detection_result
+                
+            except Exception as e:
+                logger.error(f"Parallel task detection failed: {e}")
+                return {'parallel_required': False, 'error': str(e)}
     
     def cleanup_completed_agents(self, max_age_hours: float = 24) -> int:
         """

@@ -10,24 +10,77 @@ import shutil
 import json
 import time
 import stat
+import subprocess
+import hashlib
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
-from .colors import Colors
+try:
+    from .colors import Colors
+except ImportError:
+    # Fallback for direct execution
+    from colors import Colors
 
-# Import secure permissions module
+# Import secure permissions module - FAIL-SAFE implementation
 try:
     from .secure_permissions import SecurePermissions
 except ImportError:
-    # Fallback when secure_permissions is not available
-    class SecurePermissions:
-        def set_secure_permission(self, path, requested_permission=None):
-            return True
-        def validate_permission(self, path, permission):
-            return {"valid": True, "warnings": [], "errors": []}
+    try:
+        from secure_permissions import SecurePermissions
+    except ImportError:
+        # SECURITY FIX: Fail-safe fallback that DENIES operations when security modules fail
+        import logging
+        _security_logger = logging.getLogger('superclaude.security.fallback')
+        _security_logger.setLevel(logging.ERROR)
+        
+        class SecurePermissions:
+            """FAIL-SAFE fallback that denies ALL operations when security modules unavailable."""
+            
+            def __init__(self):
+                _security_logger.critical("SECURITY ALERT: SecurePermissions module failed to load - ALL operations will be denied")
+                self._security_failure = True
+            
+            def set_secure_permission(self, path, requested_permission=None):
+                _security_logger.error(f"SECURITY DENIAL: Cannot set permissions on {path} - security module unavailable")
+                raise PermissionError("Security module unavailable - operation denied for safety")
+            
+            def validate_permission(self, path, permission):
+                _security_logger.error(f"SECURITY DENIAL: Cannot validate permissions for {path} - security module unavailable")
+                return {
+                    "valid": False, 
+                    "warnings": ["Security module unavailable - operation blocked"], 
+                    "errors": ["CRITICAL: Security validation failed - ALL operations denied for safety"]
+                }
+            
+            def fix_permissions(self, path, recursive=False, dry_run=False):
+                _security_logger.error(f"SECURITY DENIAL: Cannot fix permissions for {path} - security module unavailable")
+                raise PermissionError("Security module unavailable - operation denied for safety")
+            
+            def audit_permissions(self, path, recursive=False):
+                _security_logger.error(f"SECURITY DENIAL: Cannot audit permissions for {path} - security module unavailable")
+                return {
+                    "valid": False,
+                    "error": "Security module unavailable - audit denied for safety",
+                    "issues_found": 0,
+                    "critical_security_failure": True,
+                    "safe_mode_enforced": True
+                }
 
 
 class FileOperations:
-    """Safe file operations with backup and rollback capabilities."""
+    """Safe file operations with backup and rollback capabilities.
+    
+    Security Features (Phase 2 Enhancements):
+    - Resource limits and timeout enforcement
+    - Comprehensive operation logging 
+    - File integrity validation
+    - Secure temporary file handling
+    - Enhanced error sanitization
+    """
+    
+    # Security configuration
+    MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB limit
+    MAX_COPY_TIMEOUT = 300  # 5 minutes for file operations
+    MAX_BACKUP_COUNT = 50   # Maximum backup files to retain
     
     def __init__(self, use_colors: bool = True, dry_run: bool = False):
         """Initialize file operations.
@@ -41,6 +94,114 @@ class FileOperations:
         self.backup_dir: Optional[Path] = None
         self.operations_log: List[Dict[str, Any]] = []
         self.secure_perms = SecurePermissions()
+        
+        # SECURITY FIX: Check if we're using the fail-safe fallback
+        self._security_module_failed = hasattr(self.secure_perms, '_security_failure')
+        if self._security_module_failed:
+            self._log_security_event(
+                "CRITICAL_SECURITY_FAILURE", 
+                "SecurePermissions module unavailable - operations restricted",
+                "ERROR"
+            )
+        
+        # Security monitoring
+        self.security_log: List[Dict[str, Any]] = []
+        self.operation_start_time: Optional[float] = None
+        self.integrity_hashes: Dict[str, str] = {}
+    
+    def _log_security_event(self, event_type: str, path: str, details: str, severity: str = "INFO"):
+        """Log security-relevant events"""
+        event = {
+            "timestamp": time.time(),
+            "type": event_type,
+            "path": self._sanitize_path_for_logging(path),
+            "details": details,
+            "severity": severity
+        }
+        self.security_log.append(event)
+        
+        # Print to console for immediate visibility
+        if severity in ["WARNING", "ERROR"]:
+            color_func = self.colors.warning if severity == "WARNING" else self.colors.error
+            print(color_func(f"Security {severity}: {event_type} - {details}"))
+    
+    def _sanitize_path_for_logging(self, path: str) -> str:
+        """Sanitize file paths for logging to prevent information disclosure"""
+        path_str = str(path)
+        # Replace home directory with ~
+        home_str = str(Path.home())
+        if path_str.startswith(home_str):
+            path_str = path_str.replace(home_str, "~")
+        # Remove any potential sensitive directory names
+        path_str = path_str.replace("/etc/", "/[SYSTEM]/")
+        path_str = path_str.replace("/var/", "/[VAR]/")
+        return path_str
+    
+    def _validate_file_size(self, file_path: Path) -> bool:
+        """Validate file size against security limits"""
+        try:
+            if not file_path.exists():
+                return True
+            
+            file_size = file_path.stat().st_size
+            if file_size > self.MAX_FILE_SIZE:
+                self._log_security_event(
+                    "FILE_SIZE_VIOLATION", str(file_path),
+                    f"File size {file_size} exceeds limit {self.MAX_FILE_SIZE}",
+                    "ERROR"
+                )
+                return False
+            
+            return True
+        except Exception as e:
+            self._log_security_event(
+                "SIZE_CHECK_FAILED", str(file_path),
+                f"Failed to check file size: {e}",
+                "WARNING"
+            )
+            return False
+    
+    def _calculate_file_hash(self, file_path: Path) -> Optional[str]:
+        """Calculate SHA-256 hash of file for integrity checking"""
+        try:
+            if not file_path.exists() or not file_path.is_file():
+                return None
+            
+            hasher = hashlib.sha256()
+            with open(file_path, 'rb') as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hasher.update(chunk)
+            
+            return hasher.hexdigest()
+        except Exception as e:
+            self._log_security_event(
+                "HASH_CALCULATION_FAILED", str(file_path),
+                f"Failed to calculate hash: {e}",
+                "WARNING"
+            )
+            return None
+    
+    def _enforce_operation_timeout(self, operation_name: str):
+        """Check if operation has exceeded timeout"""
+        if self.operation_start_time is None:
+            return
+        
+        elapsed = time.time() - self.operation_start_time
+        if elapsed > self.MAX_COPY_TIMEOUT:
+            self._log_security_event(
+                "OPERATION_TIMEOUT", operation_name,
+                f"Operation exceeded timeout of {self.MAX_COPY_TIMEOUT}s (elapsed: {elapsed:.1f}s)",
+                "ERROR"
+            )
+            raise TimeoutError(f"Operation {operation_name} timed out after {elapsed:.1f}s")
+    
+    def _start_operation_timer(self):
+        """Start timing an operation"""
+        self.operation_start_time = time.time()
+    
+    def _stop_operation_timer(self):
+        """Stop timing an operation"""
+        self.operation_start_time = None
         
     def set_backup_dir(self, backup_dir: Union[str, Path]):
         """Set backup directory for operations.
@@ -74,7 +235,7 @@ class FileOperations:
     
     def copy_file(self, source: Union[str, Path], target: Union[str, Path], 
                   backup: bool = True) -> bool:
-        """Copy a file safely with optional backup.
+        """Copy a file safely with optional backup and security validation.
         
         Args:
             source: Source file path
@@ -87,18 +248,36 @@ class FileOperations:
         source_path = Path(source)
         target_path = Path(target)
         
-        if self.dry_run:
-            print(f"{self.colors.info('[DRY RUN]')} Would copy {source_path} -> {target_path}")
-            self._log_operation("copy", source_path, target_path)
-            return True
+        # Start operation timer for timeout enforcement
+        self._start_operation_timer()
         
         try:
+            if self.dry_run:
+                print(f"{self.colors.info('[DRY RUN]')} Would copy {source_path} -> {target_path}")
+                self._log_operation("copy", source_path, target_path)
+                return True
+            
+            # Security validations
+            if not self._validate_file_size(source_path):
+                error = f"Source file size validation failed: {source_path}"
+                self._log_operation("copy", source_path, target_path, False, error)
+                return False
+            
             # Check source exists
             if not source_path.exists():
                 error = f"Source file not found: {source_path}"
                 print(f"{self.colors.error('Error:')} {error}")
                 self._log_operation("copy", source_path, target_path, False, error)
                 return False
+            
+            # Calculate source file integrity hash
+            source_hash = self._calculate_file_hash(source_path)
+            if source_hash:
+                self.integrity_hashes[str(source_path)] = source_hash
+                self._log_security_event(
+                    "FILE_HASH_CALCULATED", str(source_path),
+                    f"Source hash: {source_hash[:16]}...", "INFO"
+                )
             
             # Backup existing target if requested
             if backup and target_path.exists():
@@ -108,18 +287,61 @@ class FileOperations:
             # Ensure target directory exists
             target_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Copy file
+            # Check timeout before copy operation
+            self._enforce_operation_timeout("copy_file")
+            
+            # Copy file with timeout monitoring
             shutil.copy2(source_path, target_path)
+            
+            # Verify file integrity after copy
+            if source_hash:
+                target_hash = self._calculate_file_hash(target_path)
+                if target_hash and target_hash != source_hash:
+                    self._log_security_event(
+                        "INTEGRITY_VIOLATION", str(target_path),
+                        f"Hash mismatch after copy - source: {source_hash[:16]}..., target: {target_hash[:16]}...",
+                        "ERROR"
+                    )
+                    # Remove corrupted file
+                    target_path.unlink()
+                    error = "File integrity check failed after copy"
+                    self._log_operation("copy", source_path, target_path, False, error)
+                    return False
+                else:
+                    self.integrity_hashes[str(target_path)] = target_hash
+                    self._log_security_event(
+                        "INTEGRITY_VERIFIED", str(target_path),
+                        f"File integrity verified: {target_hash[:16]}...", "INFO"
+                    )
+            
+            # Set secure permissions on target file
+            try:
+                self.secure_perms.set_secure_permission(target_path)
+            except PermissionError as e:
+                # Security module failure - abort operation
+                print(f"{self.colors.error('SECURITY FAILURE:')} {e}")
+                # Clean up copied file
+                if target_path.exists():
+                    target_path.unlink()
+                error = "Security module failure - operation aborted"
+                self._log_operation("copy", source_path, target_path, False, error)
+                return False
             
             print(f"{self.colors.success('✓')} Copied {source_path.name} -> {target_path}")
             self._log_operation("copy", source_path, target_path)
             return True
             
+        except TimeoutError:
+            # Timeout error already logged by _enforce_operation_timeout
+            self._log_operation("copy", source_path, target_path, False, "Operation timeout")
+            return False
         except Exception as e:
             error = f"Failed to copy {source_path} to {target_path}: {e}"
             print(f"{self.colors.error('Error:')} {error}")
             self._log_operation("copy", source_path, target_path, False, str(e))
             return False
+        finally:
+            self._stop_operation_timer()
     
     def copy_directory(self, source: Union[str, Path], target: Union[str, Path],
                       backup: bool = True) -> bool:
@@ -432,6 +654,13 @@ class FileOperations:
         cleared_ops = len(self.operations_log)
         self.operations_log.clear()
         
+        # Clear security log
+        cleared_security = len(self.security_log)
+        self.security_log.clear()
+        
+        # Clear integrity hashes
+        self.integrity_hashes.clear()
+        
         # Reset backup directory
         self.backup_dir = None
         
@@ -455,16 +684,17 @@ class FileOperations:
             return True
         
         try:
-            success = self.secure_perms.set_secure_permission(file_path, requested_permission)
+            # When security module is unavailable, this will raise PermissionError
+            self.secure_perms.set_secure_permission(file_path, requested_permission)
+            print(f"{self.colors.success('✓')} Set secure permissions on {file_path.name}")
+            self._log_operation("set_permissions", "", file_path)
+            return True
             
-            if success:
-                print(f"{self.colors.success('✓')} Set secure permissions on {file_path.name}")
-                self._log_operation("set_permissions", "", file_path)
-            else:
-                print(f"{self.colors.error('Error:')} Failed to set secure permissions on {file_path}")
-                self._log_operation("set_permissions", "", file_path, False, "Permission setting failed")
-            
-            return success
+        except PermissionError as e:
+            error = f"Security module failure: {e}"
+            print(f"{self.colors.error('SECURITY FAILURE:')} {error}")
+            self._log_operation("set_permissions", "", file_path, False, error)
+            return False
             
         except Exception as e:
             error = f"Failed to set secure permissions on {file_path}: {e}"
@@ -522,6 +752,76 @@ class FileOperations:
             return self.secure_perms.fix_permissions(dir_path, recursive, dry_run=True)
         
         return self.secure_perms.fix_permissions(dir_path, recursive, dry_run=False)
+    
+    def get_security_report(self) -> Dict[str, Any]:
+        """Get comprehensive security report for all operations.
+        
+        Returns:
+            Dictionary with security statistics and events
+        """
+        total_events = len(self.security_log)
+        
+        # Count events by severity
+        events_by_severity = {}
+        events_by_type = {}
+        
+        for event in self.security_log:
+            severity = event["severity"]
+            event_type = event["type"]
+            
+            events_by_severity[severity] = events_by_severity.get(severity, 0) + 1
+            events_by_type[event_type] = events_by_type.get(event_type, 0) + 1
+        
+        # Count critical security metrics
+        integrity_checks = events_by_type.get("INTEGRITY_VERIFIED", 0) + events_by_type.get("INTEGRITY_VIOLATION", 0)
+        integrity_violations = events_by_type.get("INTEGRITY_VIOLATION", 0)
+        size_violations = events_by_type.get("FILE_SIZE_VIOLATION", 0)
+        timeout_violations = events_by_type.get("OPERATION_TIMEOUT", 0)
+        
+        # Calculate security score (0-100)
+        security_score = 100
+        if total_events > 0:
+            security_score -= (events_by_severity.get("ERROR", 0) * 20)
+            security_score -= (events_by_severity.get("WARNING", 0) * 5)
+            security_score = max(0, security_score)
+        
+        return {
+            "total_security_events": total_events,
+            "events_by_severity": events_by_severity,
+            "events_by_type": events_by_type,
+            "integrity_checks_performed": integrity_checks,
+            "integrity_violations": integrity_violations,
+            "file_size_violations": size_violations,
+            "timeout_violations": timeout_violations,
+            "security_score": security_score,
+            "files_with_integrity_hashes": len(self.integrity_hashes),
+            "security_log": self.security_log[-10:]  # Last 10 events for review
+        }
+    
+    def export_security_log(self, log_file: Union[str, Path]) -> bool:
+        """Export security log to file.
+        
+        Args:
+            log_file: Path to export security log
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            log_path = Path(log_file)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            security_report = self.get_security_report()
+            
+            with open(log_path, 'w') as f:
+                json.dump(security_report, f, indent=2, default=str)
+            
+            print(f"{self.colors.success('✓')} Security log exported to {log_path}")
+            return True
+            
+        except Exception as e:
+            print(f"{self.colors.error('Error:')} Failed to export security log: {e}")
+            return False
 
 
 def test_file_ops():

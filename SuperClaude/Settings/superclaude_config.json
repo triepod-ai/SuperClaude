@@ -1,0 +1,156 @@
+{
+  "description": "SuperClaude Framework v3.0 - Framework-specific configuration",
+  "version": "3.0.0",
+  "framework": "superclaude",
+  "installation": {
+    "type": "standard",
+    "date": "2025-07-11",
+    "installer_version": "3.0.0",
+    "status": "complete",
+    "strategy": "global_first",
+    "components_installed": [
+      "core",
+      "hooks",
+      "commands",
+      "mcp"
+    ],
+    "primary_directory": "~/.claude",
+    "fallback_directory": "${PWD}/.claude",
+    "directory_priority": ["~/.claude", "${PWD}/.claude"]
+  },
+  "components": {
+    "core": {
+      "enabled": true,
+      "version": "3.0.0",
+      "status": "installed",
+      "files": [
+        "CLAUDE.md",
+        "COMMANDS.md",
+        "FLAGS.md",
+        "PRINCIPLES.md",
+        "RULES.md",
+        "MCP.md",
+        "PERSONAS.md",
+        "ORCHESTRATOR.md",
+        "MODES.md"
+      ],
+      "description": "Core SuperClaude framework files"
+    },
+    "hooks": {
+      "enabled": true,
+      "version": "3.0.0",
+      "status": "installed",
+      "primary_directory": "~/.claude/hooks",
+      "fallback_directory": "${PWD}/.claude/hooks",
+      "count": 15,
+      "description": "Event-driven enhancement system"
+    },
+    "commands": {
+      "enabled": true,
+      "version": "3.0.0",
+      "status": "installed",
+      "primary_directory": "~/.claude/commands",
+      "fallback_directory": "${PWD}/.claude/commands",
+      "count": 14,
+      "description": "Enhanced slash commands with wave orchestration"
+    },
+    "mcp": {
+      "enabled": true,
+      "version": "3.0.0",
+      "status": "installed",
+      "servers": [
+        "sequential-thinking",
+        "context7",
+        "magic",
+        "playwright",
+        "puppeteer"
+      ],
+      "description": "Model Context Protocol servers"
+    }
+  },
+  "features": {
+    "wave_mode": {
+      "enabled": true,
+      "auto_detection": true,
+      "max_waves": 5,
+      "performance_threshold": 100,
+      "validation_enabled": true,
+      "description": "Multi-stage orchestration with compound intelligence"
+    },
+    "parallel_task_execution": {
+      "enabled": true,
+      "auto_detection": true,
+      "delegation_flags": ["--delegate", "--parallel-dirs", "--parallel-files", "--parallel-focus", "--multi-agent"],
+      "delegation_keywords": ["delegate", "sub-agent", "parallel task", "parallel processing"],
+      "execution_pattern": "parallel_tasks_single_response",
+      "performance_target": 0.4,
+      "description": "CRITICAL: Parallel Task execution for true sub-agent delegation"
+    },
+    "performance_monitoring": {
+      "enabled": true,
+      "target_execution_time": 100,
+      "optimization_enabled": true,
+      "compression_enabled": true,
+      "description": "Real-time performance monitoring and optimization"
+    },
+    "quality_gates": {
+      "enabled": true,
+      "validation_steps": 8,
+      "coverage_threshold": 0.8,
+      "compliance_required": true,
+      "description": "8-step validation cycle for quality assurance"
+    },
+    "compound_intelligence": {
+      "enabled": true,
+      "context_accumulation": true,
+      "synthesis_engine": true,
+      "learning_enabled": true,
+      "description": "Compound intelligence generation and result synthesis"
+    },
+    "sub_agent_delegation": {
+      "enabled": true,
+      "auto_detection": true,
+      "max_agents": 7,
+      "parallel_processing": true,
+      "execution_pattern": "parallel_tasks_single_response",
+      "behavioral_rule": "MANDATORY: Multiple Task calls in SINGLE response when delegation triggered",
+      "performance_target": "40-70% time reduction through true parallelization",
+      "description": "Intelligent task delegation and parallel processing with enhanced execution patterns"
+    }
+  },
+  "superclaude": {
+    "version": "3.0.0",
+    "framework_enabled": true,
+    "installation_strategy": "global_first",
+    "primary_directory": "~/.claude",
+    "hooks_directory": "~/.claude/hooks",
+    "commands_directory": "~/.claude/commands",
+    "fallback_directory": "${PWD}/.claude",
+    "wave_mode": {
+      "enabled": true,
+      "auto_detection": true,
+      "max_waves": 5,
+      "performance_threshold": 100,
+      "validation_enabled": true
+    },
+    "performance": {
+      "target_execution_time": 100,
+      "monitoring_enabled": true,
+      "optimization_enabled": true,
+      "compression_enabled": true
+    },
+    "quality_gates": {
+      "enabled": true,
+      "validation_steps": 8,
+      "coverage_threshold": 0.8,
+      "compliance_required": true
+    },
+    "intelligence": {
+      "compound_enabled": true,
+      "context_accumulation": true,
+      "synthesis_engine": true,
+      "learning_enabled": true
+    },
+    "hooks_enabled": true
+  }
+}

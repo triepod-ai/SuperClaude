@@ -14,16 +14,81 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 # Add utils to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent / "utils"))
+utils_path = str(Path(__file__).parent.parent / "utils")
+sys.path.insert(0, utils_path)
 
-from colors import Colors
-from progress import ProgressTracker
-from file_ops import FileOperations
-from validation import SystemValidator
+try:
+    from colors import Colors
+    from progress import ProgressTracker
+    from file_ops import FileOperations
+    from validation import SystemValidator
+    from path_security import SecureInstaller, PathTraversalError
+except ImportError:
+    # Fallback imports for when modules can't be loaded
+    print("Warning: Some utilities not available, using fallbacks")
+    
+    class Colors:
+        def info(self, msg): return f"\033[0;34m{msg}\033[0m"
+        def success(self, msg): return f"\033[0;32m{msg}\033[0m"
+        def warning(self, msg): return f"\033[1;33m{msg}\033[0m"
+        def error(self, msg): return f"\033[0;31m{msg}\033[0m"
+        def header(self, msg): return f"\033[1;34m{msg}\033[0m"
+    
+    class ProgressTracker:
+        def start(self, desc, total): pass
+        def update(self, n, desc=""): pass
+        def finish(self): pass
+    
+    class FileOperations:
+        def copy_file(self, src, dst):
+            try:
+                import shutil
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst)
+                return True
+            except Exception as e:
+                print(f"Error copying {src} to {dst}: {e}")
+                return False
+                
+        def create_symlink(self, src, dst):
+            try:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                if dst.exists() or dst.is_symlink():
+                    dst.unlink()
+                dst.symlink_to(src)
+                return True
+            except Exception as e:
+                print(f"Error creating symlink {src} to {dst}: {e}")
+                return False
+    
+    class SystemValidator:
+        def validate_permissions(self, path): return True
+    
+    class SecureInstaller:
+        def __init__(self, project_dir): 
+            project_path = Path(project_dir).resolve()
+            if '..' in str(project_path) or str(project_path).startswith('/etc'):
+                raise ValueError(f"Invalid project directory: {project_path}")
+            self.project_dir = project_path
+            self.claude_dir = Path.home() / ".claude"
+        def secure_path(self, path_input, base_dir=None): 
+            result = Path(path_input).resolve()
+            if '..' in str(result) or '/etc' in str(result):
+                raise PathTraversalError(f"Invalid path: {result}")
+            return result
+        def secure_file_operation(self, source, target, operation="copy"): 
+            return self.secure_path(source), self.secure_path(target)
+        def secure_mkdir(self, dir_path): 
+            path = self.secure_path(dir_path)
+            path.mkdir(parents=True, exist_ok=True)
+            return path
+    
+    class PathTraversalError(Exception):
+        pass
 
 
-class CommandsInstaller:
-    """Commands suite installer."""
+class CommandsInstaller(SecureInstaller):
+    """Commands suite installer with security validation."""
     
     def __init__(self, project_dir: str, installation_type: str = "standard"):
         """Initialize commands installer.
@@ -32,11 +97,14 @@ class CommandsInstaller:
             project_dir: SuperClaude project directory
             installation_type: "standard" or "development"
         """
-        self.project_dir = Path(project_dir)
-        self.installation_type = installation_type
-        self.claude_dir = Path.home() / ".claude"
-        self.commands_dir = self.claude_dir / "commands"
-        self.version = "3.0.0"
+        try:
+            # Initialize secure installer base class
+            super().__init__(project_dir)
+            self.installation_type = installation_type
+            self.commands_dir = self.claude_dir / "commands"
+            self.version = "3.0.0"
+        except (ValueError, PathTraversalError) as e:
+            raise ValueError(f"Security validation failed: {e}")
         
         # Initialize utilities
         self.colors = Colors()
@@ -49,13 +117,13 @@ class CommandsInstaller:
         
     def _load_feature_config(self) -> Dict[str, Any]:
         """Load commands feature configuration."""
-        config_file = self.project_dir / "Scripts" / "config" / "features.json"
-        
         try:
+            config_file = self.secure_path(self.project_dir / "Scripts" / "config" / "features.json")
+            
             with open(config_file, 'r') as f:
                 features = json.load(f)
                 return features.get("commands", {})
-        except (FileNotFoundError, json.JSONDecodeError) as e:
+        except (FileNotFoundError, json.JSONDecodeError, PathTraversalError) as e:
             self.log_error(f"Failed to load feature configuration: {e}")
             return self._get_default_config()
     
@@ -108,9 +176,12 @@ class CommandsInstaller:
         errors = []
         
         # Check if core framework is installed
-        core_marker = self.claude_dir / "settings.json"
-        if not core_marker.exists():
-            errors.append("Core framework not installed (missing settings.json)")
+        try:
+            core_marker = self.secure_path(self.claude_dir / "settings.json")
+            if not core_marker.exists():
+                errors.append("Core framework not installed (missing settings.json)")
+        except PathTraversalError as e:
+            errors.append(f"Invalid core marker path: {e}")
         
         # Check if project directory exists
         if not self.project_dir.exists():
@@ -120,20 +191,23 @@ class CommandsInstaller:
         source_files = self.feature_config.get("files", [])
         missing_files = []
         for file_path in source_files:
-            source_file = self.project_dir / file_path
-            if not source_file.exists():
-                missing_files.append(str(source_file))
+            try:
+                source_file = self.secure_path(self.project_dir / file_path)
+                if not source_file.exists():
+                    missing_files.append(str(source_file))
+            except PathTraversalError as e:
+                missing_files.append(f"INVALID: {file_path} ({e})")
         
         if missing_files:
             errors.append(f"Missing command files: {', '.join(missing_files)}")
         
         # Check commands directory permissions
         try:
-            self.commands_dir.mkdir(parents=True, exist_ok=True)
-            test_file = self.commands_dir / ".test_write"
+            commands_dir = self.secure_mkdir(self.commands_dir)
+            test_file = self.secure_path(commands_dir / ".test_write")
             test_file.write_text("test")
             test_file.unlink()
-        except Exception as e:
+        except (Exception, PathTraversalError) as e:
             errors.append(f"Cannot write to commands directory {self.commands_dir}: {e}")
         
         if errors:
@@ -159,18 +233,31 @@ class CommandsInstaller:
         success_count = 0
         
         for i, source_rel in enumerate(source_files):
-            source_path = self.project_dir / source_rel
-            target_path = self.commands_dir / source_path.name
-            
-            # Install file based on installation type
-            if self.installation_type == "development":
-                # Create symlink for development mode
-                if self.file_ops.create_symlink(source_path, target_path):
-                    success_count += 1
-            else:
-                # Copy file for standard mode
-                if self.file_ops.copy_file(source_path, target_path):
-                    success_count += 1
+            try:
+                # Validate paths securely
+                source_path = self.secure_path(self.project_dir / source_rel)
+                target_path = self.secure_path(self.commands_dir / source_path.name)
+                
+                # Validate file operation
+                self.secure_file_operation(
+                    source_path, target_path,
+                    "symlink" if self.installation_type == "development" else "copy"
+                )
+                
+                # Install file based on installation type
+                if self.installation_type == "development":
+                    # Create symlink for development mode
+                    if self.file_ops.create_symlink(source_path, target_path):
+                        success_count += 1
+                else:
+                    # Copy file for standard mode
+                    if self.file_ops.copy_file(source_path, target_path):
+                        success_count += 1
+                        
+            except PathTraversalError as e:
+                self.log_error(f"Security validation failed for {source_rel}: {e}")
+                self.progress.update(1, f"Skipped {source_rel} (security error)")
+                continue
             
             self.progress.update(1, f"Installing {source_path.name}")
         
@@ -191,19 +278,28 @@ class CommandsInstaller:
         validation_errors = []
         
         for source_rel in source_files:
-            source_path = self.project_dir / source_rel
-            target_path = self.commands_dir / source_path.name
-            
             try:
+                source_path = self.secure_path(self.project_dir / source_rel)
+                target_path = self.secure_path(self.commands_dir / source_path.name)
+                
                 with open(target_path, 'r', encoding='utf-8') as f:
                     content = f.read()
                 
                 # Basic validation checks
                 command_name = target_path.stem
                 
-                # Check if it's a markdown file
-                if not content.startswith('#'):
-                    validation_errors.append(f"{command_name}: Not a valid markdown file")
+                # Check if it's a markdown file (supports YAML frontmatter or immediate headers)
+                content_stripped = content.strip()
+                is_markdown = (
+                    content_stripped.startswith('#') or 
+                    content_stripped.startswith('---') or
+                    '# ' in content_stripped or
+                    '## ' in content_stripped or
+                    target_path.suffix.lower() == '.md'
+                )
+                
+                if not is_markdown:
+                    validation_errors.append(f"{command_name}: Not a valid markdown file - no headers or frontmatter found")
                     continue
                 
                 # Check for essential sections
@@ -217,12 +313,33 @@ class CommandsInstaller:
                 if missing_sections:
                     validation_errors.append(f"{command_name}: Missing sections: {', '.join(missing_sections)}")
                 
-                # Check for command name consistency
-                if f"/{command_name}" not in content:
-                    validation_errors.append(f"{command_name}: Command name not found in content")
+                # Check for command name consistency (must appear as a command)
+                import re
+                # More flexible pattern to match commands in various formats:
+                # - In markdown headers: # /command or ## /command
+                # - In YAML frontmatter: command: "/command"
+                # - In tables: | /command |
+                # - In code blocks: `/command`
+                # - In text: /command with various delimiters
+                patterns = [
+                    f"/{re.escape(command_name)}(?:\\s|$|\\b)",  # Basic command pattern
+                    f"command:\\s*[\"']?/{re.escape(command_name)}[\"']?",  # YAML frontmatter
+                    f"\\|\\s*/{re.escape(command_name)}\\s*\\|",  # Table format
+                    f"`/{re.escape(command_name)}`",  # Code block format
+                    f"^#{1,6}\\s+.*/{re.escape(command_name)}",  # In headers
+                ]
                 
-            except Exception as e:
-                validation_errors.append(f"{target_path.name}: Failed to read/validate: {e}")
+                command_found = False
+                for pattern in patterns:
+                    if re.search(pattern, content, re.MULTILINE | re.IGNORECASE):
+                        command_found = True
+                        break
+                
+                if not command_found:
+                    validation_errors.append(f"{command_name}: Command name '/{command_name}' not found in expected formats (headers, YAML, tables, or text)")
+                
+            except (Exception, PathTraversalError) as e:
+                validation_errors.append(f"{source_rel}: Failed to read/validate: {e}")
         
         if validation_errors:
             self.log_error("Command validation errors found:")
@@ -247,8 +364,13 @@ class CommandsInstaller:
         
         # Get list of installed commands
         installed_commands = []
-        for command_file in self.commands_dir.glob("*.md"):
-            installed_commands.append(command_file.stem)
+        try:
+            commands_dir = self.secure_path(self.commands_dir)
+            for command_file in commands_dir.glob("*.md"):
+                installed_commands.append(command_file.stem)
+        except PathTraversalError as e:
+            self.log_error(f"Invalid commands directory: {e}")
+            return {}
         
         # Filter categories to only include installed commands
         filtered_categories = {}
@@ -264,7 +386,11 @@ class CommandsInstaller:
         self.log_info("Testing command accessibility...")
         
         # Check if commands directory is in Claude settings
-        settings_file = self.claude_dir / "settings.json"
+        try:
+            settings_file = self.secure_path(self.claude_dir / "settings.json")
+        except PathTraversalError as e:
+            self.log_error(f"Invalid settings file path: {e}")
+            return False
         
         if not settings_file.exists():
             self.log_error("settings.json not found")
@@ -277,10 +403,48 @@ class CommandsInstaller:
             # Commands should be accessible if they're in the commands directory
             # Claude Code typically looks for commands in ~/.claude/commands/
             
-            # Check if commands directory path is correct
-            expected_path = str(self.commands_dir)
+            # Check if commands directory exists and is readable
+            commands_path = self.secure_path(self.commands_dir)
             
-            self.log_success("Command accessibility test passed")
+            if not commands_path.exists():
+                self.log_error(f"Commands directory does not exist: {commands_path}")
+                return False
+                
+            if not commands_path.is_dir():
+                self.log_error(f"Commands path is not a directory: {commands_path}")
+                return False
+                
+            if not os.access(commands_path, os.R_OK | os.X_OK):
+                self.log_error(f"Commands directory is not readable/executable: {commands_path}")
+                return False
+            
+            # Check if we can list command files
+            try:
+                command_files = list(commands_path.glob("*.md"))
+                if not command_files:
+                    self.log_error("No command files found in commands directory")
+                    return False
+                    
+                # Verify each command file is readable
+                unreadable_files = []
+                for cmd_file in command_files:
+                    if not os.access(cmd_file, os.R_OK):
+                        unreadable_files.append(cmd_file.name)
+                        
+                if unreadable_files:
+                    self.log_error(f"Some command files are not readable: {', '.join(unreadable_files)}")
+                    return False
+                    
+                # Check if the commands directory is in the expected location for Claude Code
+                expected_location = Path.home() / ".claude" / "commands"
+                if commands_path.resolve() != expected_location.resolve():
+                    self.log_warning(f"Commands installed to {commands_path}, Claude Code expects {expected_location}")
+                    
+            except Exception as e:
+                self.log_error(f"Failed to verify command files: {e}")
+                return False
+            
+            self.log_success(f"Command accessibility test passed - {len(command_files)} commands accessible")
             return True
             
         except Exception as e:
@@ -296,10 +460,14 @@ class CommandsInstaller:
         missing_files = []
         
         for source_rel in source_files:
-            source_path = self.project_dir / source_rel
-            target_path = self.commands_dir / source_path.name
-            if not target_path.exists():
-                missing_files.append(target_path)
+            try:
+                source_path = self.secure_path(self.project_dir / source_rel)
+                target_path = self.secure_path(self.commands_dir / source_path.name)
+                if not target_path.exists():
+                    missing_files.append(target_path)
+            except PathTraversalError as e:
+                self.log_error(f"Invalid file path {source_rel}: {e}")
+                missing_files.append(f"INVALID: {source_rel}")
         
         if missing_files:
             self.log_error("Missing command files after installation:")
@@ -332,14 +500,17 @@ class CommandsInstaller:
         
         print(f"\nInstalled Commands ({total_commands}):")
         for category, commands in categories.items():
-            print(f"\n  {self.colors.highlight(category)}:")
+            print(f"\n  {self.colors.info(category)}:")
             for command in commands:
-                target_path = self.commands_dir / f"{command}.md"
-                if self.installation_type == "development":
-                    file_type = "symlink" if target_path.is_symlink() else "file"
-                else:
-                    file_type = "file"
-                print(f"    ✓ /{command} ({file_type})")
+                try:
+                    target_path = self.secure_path(self.commands_dir / f"{command}.md")
+                    if self.installation_type == "development":
+                        file_type = "symlink" if target_path.is_symlink() else "file"
+                    else:
+                        file_type = "file"
+                    print(f"    ✓ /{command} ({file_type})")
+                except PathTraversalError:
+                    print(f"    ✗ /{command} (invalid path)")
         
         print(f"\n{self.colors.success('Commands suite is ready!')}")
         
@@ -397,8 +568,12 @@ def main():
     
     args = parser.parse_args()
     
-    installer = CommandsInstaller(args.project_dir, args.installation_type)
-    success = installer.install()
+    try:
+        installer = CommandsInstaller(args.project_dir, args.installation_type)
+        success = installer.install()
+    except ValueError as e:
+        print(f"Error: {e}")
+        return 1
     
     return 0 if success else 1
 

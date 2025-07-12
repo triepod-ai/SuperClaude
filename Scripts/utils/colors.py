@@ -60,7 +60,11 @@ class Colors:
     def _supports_color(self) -> bool:
         """Detect if terminal supports color output."""
         # Check if stdout is a TTY
-        if not hasattr(sys.stdout, 'isatty') or not sys.stdout.isatty():
+        try:
+            if not hasattr(sys.stdout, 'isatty') or not sys.stdout.isatty():
+                return False
+        except Exception:
+            # If terminal detection fails, default to no color
             return False
         
         # Check environment variables
@@ -138,24 +142,28 @@ class Colors:
     
     # Semantic color methods for common use cases
     def error(self, text: str) -> str:
-        """Error message (red)."""
-        return self.red(text)
+        """Error message with prefix."""
+        prefix = "✗ " if self.enabled else "[ERROR] "
+        return prefix + self.red(text)
     
     def success(self, text: str) -> str:
-        """Success message (green)."""
-        return self.green(text)
+        """Success message with prefix."""
+        prefix = "✓ " if self.enabled else "[SUCCESS] "
+        return prefix + self.green(text)
     
     def warning(self, text: str) -> str:
-        """Warning message (yellow)."""
-        return self.yellow(text)
+        """Warning message with prefix."""
+        prefix = "⚠️ " if self.enabled else "[WARNING] "
+        return prefix + self.yellow(text)
     
     def info(self, text: str) -> str:
-        """Info message (blue)."""
-        return self.blue(text)
+        """Info message with prefix."""
+        prefix = "ℹ️ " if self.enabled else "[INFO] "
+        return prefix + self.blue(text)
     
     def header(self, text: str) -> str:
-        """Header text (bold blue)."""
-        return self.colorize(text, self.BOLD + self.BLUE)
+        """Header text with formatting."""
+        return "=== " + self.colorize(text, self.BOLD + self.BLUE) + " ==="
     
     def highlight(self, text: str) -> str:
         """Highlighted text (bold white)."""
@@ -163,7 +171,7 @@ class Colors:
     
     def muted(self, text: str) -> str:
         """Muted text (gray)."""
-        return self.gray(text)
+        return "(" + self.gray(text) + ")"
 
 
 # Global instance for convenience

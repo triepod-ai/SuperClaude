@@ -261,10 +261,11 @@ class InputValidator:
             use_colors: Whether to use colored output
         """
         self.colors = Colors() if use_colors else Colors(force_color=False)
+        self.attempt_counts = {}  # Track attempts per prompt
     
     def get_input(self, prompt: str, validator: Optional[Callable[[str], bool]] = None,
                   error_message: str = "Invalid input", 
-                  allow_empty: bool = False) -> Optional[str]:
+                  allow_empty: bool = False, max_attempts: int = 5) -> Optional[str]:
         """Get validated input from user.
         
         Args:
@@ -272,25 +273,67 @@ class InputValidator:
             validator: Validation function
             error_message: Error message for invalid input
             allow_empty: Whether to allow empty input
+            max_attempts: Maximum number of invalid attempts
             
         Returns:
-            User input or None if cancelled
+            User input or None if cancelled or max attempts exceeded
         """
-        while True:
+        # Track attempts for this prompt
+        prompt_key = prompt[:50]  # Use truncated prompt as key
+        if prompt_key not in self.attempt_counts:
+            self.attempt_counts[prompt_key] = 0
+        
+        while self.attempt_counts[prompt_key] < max_attempts:
             try:
                 value = input(f"{prompt}: ").strip()
                 
                 if not value and not allow_empty:
                     print(f"{self.colors.error('Input cannot be empty.')}")
+                    self.attempt_counts[prompt_key] += 1
                     continue
                 
                 if not value and allow_empty:
+                    # Reset attempts on success
+                    self.attempt_counts[prompt_key] = 0
                     return value
+                
+                # Basic security sanitization for user input
+                try:
+                    from validation import InputValidator
+                    input_validator = InputValidator()
+                    sanitized_value = input_validator.sanitize_input(value)
+                    if sanitized_value is None:
+                        print(f"{self.colors.error('Input contains dangerous characters.')}")
+                        self.attempt_counts[prompt_key] += 1
+                        continue
+                    value = sanitized_value
+                except ImportError:
+                    # Fallback sanitization if validation module not available
+                    # Remove dangerous characters
+                    dangerous_chars = ['<', '>', '"', "'", '&', '\0', '\n', '\r', '\t']
+                    for char in dangerous_chars:
+                        if char in value:
+                            print(f"{self.colors.error('Input contains potentially dangerous characters.')}")
+                            self.attempt_counts[prompt_key] += 1
+                            value = None
+                            break
+                    
+                    if value is None:
+                        continue
+                    
+                    # Basic length limit
+                    if len(value) > 1000:
+                        print(f"{self.colors.error('Input too long (max 1000 characters).')}")
+                        self.attempt_counts[prompt_key] += 1
+                        continue
                 
                 if validator and not validator(value):
                     print(f"{self.colors.error(error_message)}")
+                    self.attempt_counts[prompt_key] += 1
                     continue
                 
+                # Reset attempts on success
+                self.attempt_counts[prompt_key] = 0
                 return value
                 
             except KeyboardInterrupt:
@@ -299,6 +342,10 @@ class InputValidator:
             except EOFError:
                 print("\n")
                 return None
+        
+        # Max attempts exceeded
+        print(f"{self.colors.error(f'Maximum attempts ({max_attempts}) exceeded. Please try again later.')}")
+        return None
     
     def get_choice(self, prompt: str, choices: List[str], 
                    case_sensitive: bool = False) -> Optional[str]:

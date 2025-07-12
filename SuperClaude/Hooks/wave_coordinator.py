@@ -451,11 +451,33 @@ class WaveCoordinator:
             '--wave-dry-run': {'dry_run': True, 'source': 'flag'}
         }
         
+        # Delegation flags detection (enhanced support)
+        delegation_flags = {
+            '--delegate': {'delegation_triggered': True, 'parallel_required': True, 'source': 'delegation'},
+            '--parallel-dirs': {'delegation_type': 'directories', 'parallel_required': True, 'source': 'delegation'},
+            '--parallel-files': {'delegation_type': 'files', 'parallel_required': True, 'source': 'delegation'},
+            '--parallel-focus': {'delegation_type': 'domains', 'parallel_required': True, 'source': 'delegation'},
+            '--multi-agent': {'delegation_triggered': True, 'parallel_required': True, 'source': 'delegation'},
+            'delegate': {'delegation_triggered': True, 'parallel_required': True, 'source': 'delegation'},
+            'sub-agent': {'delegation_triggered': True, 'parallel_required': True, 'source': 'delegation'},
+            'parallel task': {'delegation_triggered': True, 'parallel_required': True, 'source': 'delegation'}
+        }
+        
         # Check for flag-based wave activation
         wave_info = {}
         for flag, info in wave_flags.items():
             if flag in instruction_lower:
                 wave_info.update(info)
+        
+        # Check for delegation flags activation (CRITICAL: parallel Task execution required)
+        delegation_info = {}
+        for flag, info in delegation_flags.items():
+            if flag in instruction_lower:
+                delegation_info.update(info)
+                # CRITICAL: Set parallel execution requirement
+                wave_info['delegation_detected'] = True
+                wave_info['parallel_task_required'] = True
+                wave_info['execution_pattern'] = 'parallel_tasks_single_response'
         
         # Traditional pattern matching (for backward compatibility)
         wave_patterns = {
@@ -476,12 +498,19 @@ class WaveCoordinator:
                 })
                 break
         
-        # Check if waves are detected (either by flag or pattern)
-        if wave_info or any(keyword in instruction_lower for keyword in ['wave-mode', 'force-waves', 'adaptive-waves', 'progressive-waves', 'systematic-waves', 'enterprise-waves']):
+        # Check if waves or delegation are detected
+        delegation_keywords = ['--delegate', 'delegate', 'sub-agent', 'parallel task', 'multi-agent', 'parallel-dirs', 'parallel-files', 'parallel-focus']
+        wave_keywords = ['wave-mode', 'force-waves', 'adaptive-waves', 'progressive-waves', 'systematic-waves', 'enterprise-waves']
+        
+        if wave_info or any(keyword in instruction_lower for keyword in wave_keywords + delegation_keywords):
+            detection_method = 'delegation-based' if delegation_info else ('flag-based' if wave_info.get('source') == 'flag' else 'pattern-based')
+            
             result = {
                 'detected': True,
                 'wave_info': wave_info,
-                'detection_method': 'flag-based' if wave_info.get('source') == 'flag' else 'pattern-based'
+                'delegation_info': delegation_info,
+                'detection_method': detection_method,
+                'parallel_execution_required': wave_info.get('parallel_task_required', False)
             }
             
             # Cache result

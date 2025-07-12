@@ -1,0 +1,151 @@
+# SuperClaude Framework v3.0 - System Requirements Configuration
+#
+# This file defines the system requirements for SuperClaude installation
+# and provides OS-specific installation commands.
+
+requirements:
+  python:
+    name: "Python 3.12+"
+    min_version: "3.12"
+    check_command: "python3 --version"
+    version_extraction: 'Python ([0-9]+\.[0-9]+(\.[0-9]+)?)'
+    required: true
+    
+  node:
+    name: "Node.js 18+"
+    min_version: "18.0"
+    check_command: "node --version"
+    version_extraction: 'v?([0-9]+\.[0-9]+(\.[0-9]+)?)'
+    required: true
+    
+  npm:
+    name: "npm"
+    min_version: "6.0"
+    check_command: "npm --version"
+    version_extraction: '([0-9]+\.[0-9]+(\.[0-9]+)?)'
+    required: true
+    note: "Usually installed with Node.js"
+    
+  git:
+    name: "Git"
+    min_version: "2.0"
+    check_command: "git --version"
+    version_extraction: 'git version ([0-9]+\.[0-9]+(\.[0-9]+)?)'
+    required: true
+    
+  claude:
+    name: "Claude CLI"
+    min_version: "0.1"
+    check_command: "claude --version"
+    version_extraction: '([0-9]+\.[0-9]+(\.[0-9]+)?)'
+    required: false
+    note: "Optional - install via: npm install -g @anthropic-ai/claude-cli"
+
+# OS-specific installation commands
+install_commands:
+  python:
+    debian:
+      - "sudo apt update"
+      - "sudo apt install python3.12 python3.12-venv python3.12-pip"
+      - "# Alternative for older Ubuntu:"
+      - "sudo add-apt-repository ppa:deadsnakes/ppa"
+      - "sudo apt update && sudo apt install python3.12"
+    redhat:
+      - "# Fedora:"
+      - "sudo dnf install python3.12"
+      - "# RHEL/CentOS (enable EPEL):"
+      - "sudo yum install epel-release"
+      - "sudo yum install python312"
+    arch:
+      - "sudo pacman -S python"
+    macos:
+      - "# Using Homebrew (recommended):"
+      - "brew install python@3.12"
+      - "# Or download from python.org"
+    windows:
+      - "# Download from https://www.python.org/downloads/"
+      - "# Or use winget:"
+      - "winget install Python.Python.3.12"
+    manual:
+      - "Download from: https://www.python.org/downloads/"
+      
+  node:
+    debian:
+      - "# Using NodeSource repository:"
+      - "curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -"
+      - "sudo apt-get install -y nodejs"
+      - "# Or using snap:"
+      - "sudo snap install node --classic"
+    redhat:
+      - "# Using NodeSource repository:"
+      - "curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -"
+      - "sudo yum install -y nodejs npm"
+    arch:
+      - "sudo pacman -S nodejs npm"
+    macos:
+      - "# Using Homebrew:"
+      - "brew install node@18"
+      - "# Or download from nodejs.org"
+    windows:
+      - "# Download from https://nodejs.org/"
+      - "# Or use winget:"
+      - "winget install OpenJS.NodeJS"
+    manual:
+      - "Download from: https://nodejs.org/"
+      
+  npm:
+    debian:
+      - "sudo apt install npm"
+    redhat:
+      - "sudo yum install npm"
+    arch:
+      - "sudo pacman -S npm"
+    macos:
+      - "# Reinstall Node.js which includes npm"
+      - "brew reinstall node"
+    windows:
+      - "# npm is included with Node.js"
+    manual:
+      - "npm is typically installed with Node.js"
+      - "If Node.js is installed but npm is missing, reinstall Node.js"
+      
+  git:
+    debian:
+      - "sudo apt update && sudo apt install git"
+    redhat:
+      - "sudo yum install git"
+    arch:
+      - "sudo pacman -S git"
+    macos:
+      - "# Usually pre-installed with Xcode Command Line Tools"
+      - "xcode-select --install"
+      - "# Or using Homebrew:"
+      - "brew install git"
+    windows:
+      - "# Download from https://git-scm.com/download/win"
+      - "# Or use winget:"
+      - "winget install Git.Git"
+    manual:
+      - "Download from: https://git-scm.com/"
+      
+  claude:
+    all:
+      - "npm install -g @anthropic-ai/claude-cli"
+      - "# Or follow instructions at: https://docs.anthropic.com/claude/docs/claude-cli"
+
+# Environment checks
+environment_checks:
+  disk_space:
+    min_mb: 100
+    description: "Minimum disk space required for installation"
+    
+  internet:
+    required: true
+    description: "Internet connectivity required for MCP server downloads"
+    test_urls:
+      - "https://www.google.com"
+      - "https://github.com"
+      
+  permissions:
+    check_sudo: true
+    description: "Check for necessary installation permissions"

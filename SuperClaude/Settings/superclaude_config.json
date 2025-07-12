@@ -1,0 +1,313 @@
+{
+  "superclaude_framework": {
+    "enabled": true,
+    "version": "3.0.0",
+    "performance_mode": "optimized",
+    "auto_activation": {
+      "enabled": true,
+      "confidence_threshold": 0.7,
+      "learning_enabled": true
+    }
+  },
+  "command_system": {
+    "enabled": true,
+    "slash_commands": true,
+    "auto_routing": true,
+    "supported_commands": [
+      "analyze", "improve", "build", "scan", "review", "design",
+      "troubleshoot", "task", "document", "explain", "estimate",
+      "test", "deploy", "git", "migrate", "cleanup", "dev_setup",
+      "load", "spawn", "index", "loop"
+    ]
+  },
+  "persona_system": {
+    "enabled": true,
+    "auto_activation": true,
+    "multi_persona": true,
+    "personas": {
+      "architect": {
+        "enabled": true,
+        "auto_activate": true,
+        "keywords": ["architecture", "design", "scalability", "system"],
+        "complexity_threshold": 0.7
+      },
+      "frontend": {
+        "enabled": true,
+        "auto_activate": true,
+        "keywords": ["ui", "component", "react", "vue", "responsive", "accessibility"],
+        "complexity_threshold": 0.3
+      },
+      "backend": {
+        "enabled": true,
+        "auto_activate": true,
+        "keywords": ["api", "database", "server", "reliability", "performance"],
+        "complexity_threshold": 0.4
+      },
+      "analyzer": {
+        "enabled": true,
+        "auto_activate": true,
+        "keywords": ["analyze", "investigate", "root cause", "debug"],
+        "complexity_threshold": 0.5
+      },
+      "security": {
+        "enabled": true,
+        "auto_activate": true,
+        "keywords": ["security", "vulnerability", "threat", "audit"],
+        "complexity_threshold": 0.6
+      },
+      "performance": {
+        "enabled": true,
+        "auto_activate": true,
+        "keywords": ["optimize", "performance", "bottleneck", "speed"],
+        "complexity_threshold": 0.5
+      },
+      "qa": {
+        "enabled": true,
+        "auto_activate": true,
+        "keywords": ["test", "quality", "validation", "qa"],
+        "complexity_threshold": 0.3
+      },
+      "scribe": {
+        "enabled": true,
+        "auto_activate": true,
+        "keywords": ["document", "write", "guide", "explain"],
+        "complexity_threshold": 0.2
+      },
+      "refactorer": {
+        "enabled": true,
+        "auto_activate": true,
+        "keywords": ["refactor", "cleanup", "technical debt"],
+        "complexity_threshold": 0.4
+      },
+      "devops": {
+        "enabled": true,
+        "auto_activate": true,
+        "keywords": ["deploy", "infrastructure", "automation"],
+        "complexity_threshold": 0.5
+      },
+      "mentor": {
+        "enabled": true,
+        "auto_activate": true,
+        "keywords": ["explain", "learn", "understand"],
+        "complexity_threshold": 0.2
+      }
+    }
+  },
+  "wave_orchestration": {
+    "enabled": true,
+    "auto_activation": true,
+    "thresholds": {
+      "complexity": 0.7,
+      "file_count": 20,
+      "operation_types": 2
+    },
+    "strategies": {
+      "progressive": {
+        "enabled": true,
+        "description": "Incremental enhancement with iterative improvement"
+      },
+      "systematic": {
+        "enabled": true,
+        "description": "Methodical analysis for complex problems"
+      },
+      "adaptive": {
+        "enabled": true,
+        "description": "Dynamic configuration based on complexity"
+      },
+      "enterprise": {
+        "enabled": true,
+        "description": "Large-scale orchestration for >100 files"
+      }
+    },
+    "max_waves": 5,
+    "validation_gates": true
+  },
+  "flag_system": {
+    "enabled": true,
+    "auto_detection": true,
+    "supported_flags": {
+      "planning": ["plan", "think", "think_hard", "ultrathink"],
+      "efficiency": ["uc", "ultracompressed", "answer_only", "validate", "safe_mode", "verbose"],
+      "mcp_control": ["c7", "context7", "seq", "sequential", "magic", "play", "playwright", "all_mcp", "no_mcp"],
+      "delegation": ["delegate", "concurrency"],
+      "wave_mode": ["wave_mode", "wave_strategy", "wave_delegation"],
+      "scope": ["scope", "focus"],
+      "iteration": ["loop", "iterations", "interactive"],
+      "personas": ["persona_architect", "persona_frontend", "persona_backend", "persona_analyzer", "persona_security", "persona_performance", "persona_qa", "persona_scribe", "persona_refactorer", "persona_devops", "persona_mentor"],
+      "introspection": ["introspect", "introspection"]
+    },
+    "auto_activation_rules": {
+      "thinking_flags": {
+        "complexity_threshold": 0.6,
+        "keywords": ["complex", "analyze", "comprehensive"]
+      },
+      "compression_flags": {
+        "word_threshold": 50,
+        "auto_enable_uc": true
+      },
+      "mcp_flags": {
+        "context7": ["library", "documentation", "framework"],
+        "sequential": ["complex", "analyze", "debug"],
+        "magic": ["component", "ui", "react"],
+        "playwright": ["test", "e2e", "browser"]
+      }
+    }
+  },
+  "intelligent_routing": {
+    "enabled": true,
+    "confidence_threshold": 0.8,
+    "tool_preferences": {
+      "analyze": ["Read", "Grep", "Glob", "Sequential"],
+      "improve": ["Read", "Edit", "MultiEdit", "Sequential"],
+      "build": ["Write", "Edit", "Magic", "Context7"],
+      "scan": ["Grep", "Read", "Sequential", "Playwright"],
+      "review": ["Read", "Grep", "Sequential", "Context7"]
+    },
+    "mcp_server_preferences": {
+      "frontend": ["magic", "context7"],
+      "backend": ["context7", "sequential"],
+      "security": ["sequential", "playwright"],
+      "performance": ["sequential", "playwright"],
+      "testing": ["playwright", "sequential"],
+      "documentation": ["context7", "sequential"]
+    }
+  },
+  "quality_gates": {
+    "enabled": true,
+    "validation_cycle": "8_step",
+    "gates": [
+      {
+        "step": 1,
+        "name": "syntax",
+        "description": "Syntax validation",
+        "required": true,
+        "mcp_servers": ["superclaude-quality"]
+      },
+      {
+        "step": 2,
+        "name": "type",
+        "description": "Type compatibility",
+        "required": true,
+        "mcp_servers": ["superclaude-intelligence"]
+      },
+      {
+        "step": 3,
+        "name": "lint",
+        "description": "Code quality",
+        "required": true,
+        "mcp_servers": ["superclaude-quality"]
+      },
+      {
+        "step": 4,
+        "name": "security",
+        "description": "Security assessment",
+        "required": true,
+        "mcp_servers": ["superclaude-quality"]
+      },
+      {
+        "step": 5,
+        "name": "test",
+        "description": "Test coverage",
+        "required": true,
+        "mcp_servers": ["superclaude-tasks"]
+      },
+      {
+        "step": 6,
+        "name": "performance",
+        "description": "Performance validation",
+        "required": true,
+        "mcp_servers": ["superclaude-performance"]
+      },
+      {
+        "step": 7,
+        "name": "documentation",
+        "description": "Documentation validation",
+        "required": false,
+        "mcp_servers": ["superclaude-intelligence"]
+      },
+      {
+        "step": 8,
+        "name": "integration",
+        "description": "Integration testing",
+        "required": true,
+        "mcp_servers": ["superclaude-orchestrator"]
+      }
+    ],
+    "auto_fix": true,
+    "parallel_validation": true
+  },
+  "mcp_integration": {
+    "enabled": true,
+    "servers": {
+      "superclaude-orchestrator": {
+        "enabled": true,
+        "path": "MCP_Servers/superclaude-orchestrator",
+        "description": "Wave orchestration and coordination"
+      },
+      "superclaude-intelligence": {
+        "enabled": true,
+        "path": "MCP_Servers/superclaude-intelligence",
+        "description": "Advanced reasoning and analysis"
+      },
+      "superclaude-quality": {
+        "enabled": true,
+        "path": "MCP_Servers/superclaude-quality",
+        "description": "Quality validation and optimization"
+      },
+      "superclaude-performance": {
+        "enabled": true,
+        "path": "MCP_Servers/superclaude-performance",
+        "description": "Performance monitoring and optimization"
+      },
+      "superclaude-tasks": {
+        "enabled": true,
+        "path": "MCP_Servers/superclaude-tasks",
+        "description": "Task decomposition and management"
+      },
+      "superclaude-ui": {
+        "enabled": true,
+        "path": "MCP_Servers/superclaude-ui",
+        "description": "UI component generation and design"
+      }
+    },
+    "fallback_strategies": {
+      "graceful_degradation": true,
+      "timeout_ms": 5000,
+      "retry_attempts": 2
+    }
+  },
+  "performance": {
+    "targets": {
+      "framework_processing": 100,
+      "hook_processing": 10,
+      "command_routing": 20,
+      "persona_activation": 15,
+      "flag_parsing": 5
+    },
+    "optimization": {
+      "caching_enabled": true,
+      "parallel_processing": true,
+      "compression_threshold": 1024,
+      "memory_limit_mb": 50
+    },
+    "monitoring": {
+      "enabled": true,
+      "metrics_collection": true,
+      "performance_alerts": true,
+      "slow_operation_threshold": 100
+    }
+  },
+  "debugging": {
+    "enabled": false,
+    "log_level": "INFO",
+    "detailed_tracing": false,
+    "save_processing_logs": false,
+    "introspection_mode": false
+  },
+  "compatibility": {
+    "claude_code_version": "latest",
+    "mcp_protocol_version": "0.1.0",
+    "python_version": "3.8+",
+    "node_version": "18+"
+  }
+}

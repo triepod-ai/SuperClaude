@@ -1,5 +1,7 @@
-import { EventEmitter } from 'events';
-import { logger, PerformanceMonitor } from '@superclaude/shared';
+import { EventEmitter } from 'eventemitter3';
+import pidusage from 'pidusage';
+import * as si from 'systeminformation';
+import { logger } from '../../shared/src/utils/logger.js';
 import {
   PerformanceMetrics,
   PerformanceBenchmark,
@@ -18,12 +20,14 @@ import {
  * Advanced performance profiler for real-time monitoring and bottleneck detection
  */
 export class PerformanceProfiler extends EventEmitter {
-  private metrics: Map<string, PerformanceMetrics[]> = new Map();
-  private profiles: Map<string, PerformanceProfile> = new Map();
-  private alerts: Alert[] = [];
-  private benchmarks: Map<string, PerformanceBenchmark> = new Map();
-  private bottlenecks: BottleneckInfo[] = [];
-  private opportunities: OptimizationOpportunity[] = [];
+  private resourceMonitor: ResourceMonitor;
+  private cacheManager: CacheManager;
+  private metrics: ManagedMap<string, PerformanceMetrics[]>;
+  private profiles: ManagedMap<string, PerformanceProfile>;
+  private alerts: ManagedArray<Alert>;
+  private benchmarks: ManagedMap<string, PerformanceBenchmark>;
+  private bottlenecks: ManagedArray<BottleneckInfo>;
+  private opportunities: ManagedArray<OptimizationOpportunity>;
   private config: MonitoringConfig;
   private monitoringTimers: Map<string, NodeJS.Timeout> = new Map();
   private isMonitoring: boolean = false;
@@ -32,8 +36,55 @@ export class PerformanceProfiler extends EventEmitter {
   constructor(config: Partial<MonitoringConfig> = {}) {
     super();
     this.config = { ...DEFAULT_MONITORING_CONFIG, ...config };
+    
+    // Initialize resource management
+    this.resourceMonitor = new ResourceMonitor({
+      maxMapSize: 5000,
+      maxArrayLength: 1000,
+      ttlSeconds: this.config.retentionPeriod * 24 * 60 * 60, // Convert days to seconds
+      cleanupIntervalMs: this.config.aggregationInterval * 1000,
+      memoryThresholdBytes: 200 * 1024 * 1024 // 200MB threshold
+    });
+
+    this.cacheManager = new CacheManager();
+
+    // Initialize managed collections
+    this.metrics = new ManagedMap('performance-metrics', this.resourceMonitor, {
+      maxSize: 5000,
+      ttlMs: this.config.retentionPeriod * 24 * 60 * 60 * 1000
+    });
+
+    this.profiles = new ManagedMap('performance-profiles', this.resourceMonitor, {
+      maxSize: 1000,
+      ttlMs: this.config.retentionPeriod * 24 * 60 * 60 * 1000
+    });
+
+    this.alerts = new ManagedArray('performance-alerts', this.resourceMonitor, {
+      maxLength: 1000,
+      rotationSize: 500
+    });
+
+    this.benchmarks = new ManagedMap('performance-benchmarks', this.resourceMonitor, {
+      maxSize: 500,
+      ttlMs: 7 * 24 * 60 * 60 * 1000 // 7 days for benchmarks
+    });
+
+    this.bottlenecks = new ManagedArray('performance-bottlenecks', this.resourceMonitor, {
+      maxLength: 500,
+      rotationSize: 250
+    });
+
+    this.opportunities = new ManagedArray('optimization-opportunities', this.resourceMonitor, {
+      maxLength: 500,
+      rotationSize: 250
+    });
+
     this.setupCleanupScheduler();
-    logger.info('PerformanceProfiler initialized', { config: this.config });
+    this.setupResourceMonitoring();
+    
+    logger.info('PerformanceProfiler initialized with resource management', { 
+      config: this.config 
+    });
   }
 
   /**
@@ -192,8 +243,10 @@ export class PerformanceProfiler extends EventEmitter {
       const summary = this.generateBottleneckSummary(filteredBottlenecks, opportunities);
 
       // Cache results
-      this.bottlenecks = filteredBottlenecks;
-      this.opportunities = opportunities;
+      this.bottlenecks.length = 0;
+      this.bottlenecks.push(...filteredBottlenecks);
+      this.opportunities.length = 0;
+      this.opportunities.push(...opportunities);
 
       logger.info('Bottleneck analysis completed', { 
         target, 
@@ -435,29 +488,27 @@ export class PerformanceProfiler extends EventEmitter {
   }
 
   /**
-   * Clear old metrics and alerts
+   * Comprehensive cleanup of all resources
    */
   cleanup(): void {
-    const retentionMs = this.config.retentionPeriod * 24 * 60 * 60 * 1000;
-    const cutoff = new Date(Date.now() - retentionMs);
-
-    // Clean metrics
-    for (const [operation, metrics] of this.metrics) {
-      const filteredMetrics = metrics.filter(m => m.timestamp >= cutoff);
-      this.metrics.set(operation, filteredMetrics);
+    // Stop all monitoring
+    for (const target of this.monitoringTimers.keys()) {
+      this.stopMonitoring(target);
     }
 
-    // Clean alerts
-    this.alerts = this.alerts.filter(alert => alert.timestamp >= cutoff);
+    // Clean up managed resources
+    this.metrics.cleanup();
+    this.profiles.cleanup();
+    this.alerts.cleanup();
+    this.benchmarks.cleanup();
+    this.bottlenecks.cleanup();
+    this.opportunities.cleanup();
 
-    // Clean profiles
-    for (const [operation, profile] of this.profiles) {
-      if (profile.lastUpdated < cutoff) {
-        this.profiles.delete(operation);
-      }
-    }
+    // Clean up resource monitor and cache manager
+    this.resourceMonitor.cleanup();
+    this.cacheManager.cleanup();
 
-    logger.info('Performance data cleanup completed', { cutoff });
+    logger.info('Performance profiler cleanup completed');
   }
 
   /**
@@ -492,19 +543,50 @@ export class PerformanceProfiler extends EventEmitter {
     }
 
     try {
-      // Collect system metrics
-      const memoryUsage = process.memoryUsage();
-      const cpuUsage = process.cpuUsage();
-
-      // Create synthetic metrics for demonstration
-      // In a real implementation, this would collect actual metrics from the target
+      // Collect real system metrics
+      const startTime = Date.now();
+      
+      // Get process-specific metrics if target is a PID
+      let processMetrics = null;
+      const targetPid = parseInt(target);
+      if (!isNaN(targetPid)) {
+        try {
+          processMetrics = await pidusage(targetPid);
+        } catch (error) {
+          // Target is not a valid PID, treat as general monitoring
+        }
+      }
+      
+      // Get system-wide metrics
+      const [cpuInfo, memInfo, diskInfo] = await Promise.all([
+        si.currentLoad(),
+        si.mem(),
+        si.fsSize()
+      ]);
+      
+      // Get Node.js process metrics
+      const nodeMemory = process.memoryUsage();
+      const nodeCpu = process.cpuUsage();
+      
+      // Calculate execution time for this collection
+      const executionTime = Date.now() - startTime;
+      
+      // Aggregate real metrics
       const metrics: Omit<PerformanceMetrics, 'timestamp' | 'operationId'> = {
-        executionTime: Math.random() * 1000 + 100, // 100-1100ms
-        memoryUsage: memoryUsage.heapUsed,
-        cpuUsage: (cpuUsage.user + cpuUsage.system) / 1000000, // Convert to ms
-        tokenUsage: Math.floor(Math.random() * 2000 + 500), // 500-2500 tokens
-        successRate: 0.95 + Math.random() * 0.05, // 95-100%
-        errorRate: Math.random() * 0.05 // 0-5%
+        executionTime: processMetrics?.elapsed || executionTime,
+        memoryUsage: processMetrics?.memory || nodeMemory.heapUsed,
+        cpuUsage: processMetrics?.cpu || cpuInfo.currentLoad,
+        tokenUsage: Math.floor(nodeMemory.heapUsed / 1024), // Approximate token usage based on memory
+        successRate: this.calculateSuccessRate(target),
+        errorRate: this.calculateErrorRate(target),
+        
+        // Additional real metrics
+        systemMemoryUsage: memInfo.used,
+        systemMemoryTotal: memInfo.total,
+        diskUsage: diskInfo.reduce((total, disk) => total + disk.used, 0),
+        diskTotal: diskInfo.reduce((total, disk) => total + disk.size, 0),
+        loadAverage: cpuInfo.avgLoad,
+        networkIO: await this.getNetworkMetrics()
       };
 
       this.recordMetrics(target, metrics);
@@ -513,39 +595,94 @@ export class PerformanceProfiler extends EventEmitter {
       logger.error('Failed to collect metrics', { target, error });
     }
   }
+  
+  /**
+   * Calculate success rate based on recent operations
+   */
+  private calculateSuccessRate(target: string): number {
+    const recentMetrics = this.metrics.get(target) || [];
+    if (recentMetrics.length === 0) return 1.0;
+    
+    const recent = recentMetrics.slice(-10); // Last 10 samples
+    const avgErrorRate = recent.reduce((sum, m) => sum + m.errorRate, 0) / recent.length;
+    return Math.max(0, 1 - avgErrorRate);
+  }
+  
+  /**
+   * Calculate error rate based on recent failures
+   */
+  private calculateErrorRate(target: string): number {
+    const recentMetrics = this.metrics.get(target) || [];
+    if (recentMetrics.length === 0) return 0;
+    
+    const recent = recentMetrics.slice(-10); // Last 10 samples
+    const errorCount = recent.filter(m => m.errorRate > 0.1).length;
+    return errorCount / recent.length;
+  }
+  
+  /**
+   * Get network I/O metrics
+   */
+  private async getNetworkMetrics(): Promise<number> {
+    try {
+      const networkStats = await si.networkStats();
+      const primaryInterface = networkStats[0];
+      if (primaryInterface) {
+        return primaryInterface.rx_bytes + primaryInterface.tx_bytes;
+      }
+    } catch (error) {
+      logger.debug('Failed to get network metrics', { error });
+    }
+    return 0;
+  }
 
   private async createBaseline(target: string): Promise<void> {
-    // Create a baseline profile for comparison
-    const profile: PerformanceProfile = {
-      name: `${target}_baseline`,
-      description: `Baseline performance profile for ${target}`,
-      baselineMetrics: {
-        executionTime: 500,
-        memoryUsage: 50 * 1024 * 1024, // 50MB
-        cpuUsage: 10,
-        tokenUsage: 1000,
-        successRate: 0.99,
-        errorRate: 0.01,
+    try {
+      // Collect current system state for baseline
+      const [cpuInfo, memInfo] = await Promise.all([
+        si.currentLoad(),
+        si.mem()
+      ]);
+      
+      const nodeMemory = process.memoryUsage();
+      
+      // Create baseline from current system state
+      const baselineMetrics: PerformanceMetrics = {
+        executionTime: 100, // Baseline execution time
+        memoryUsage: nodeMemory.heapUsed,
+        cpuUsage: cpuInfo.currentLoad,
+        tokenUsage: Math.floor(nodeMemory.heapUsed / 1024),
+        successRate: 1.0,
+        errorRate: 0.0,
         timestamp: new Date(),
-        operationId: this.generateOperationId()
-      },
-      currentMetrics: {
-        executionTime: 500,
-        memoryUsage: 50 * 1024 * 1024,
-        cpuUsage: 10,
-        tokenUsage: 1000,
-        successRate: 0.99,
-        errorRate: 0.01,
-        timestamp: new Date(),
-        operationId: this.generateOperationId()
-      },
-      trend: 'stable',
-      lastUpdated: new Date(),
-      samples: 0
-    };
+        operationId: this.generateOperationId(),
+        
+        // System baseline
+        systemMemoryUsage: memInfo.used,
+        systemMemoryTotal: memInfo.total,
+        loadAverage: cpuInfo.avgLoad
+      };
+      
+      const profile: PerformanceProfile = {
+        name: `${target}_baseline`,
+        description: `Baseline performance profile for ${target}`,
+        baselineMetrics,
+        currentMetrics: { ...baselineMetrics },
+        trend: 'stable',
+        lastUpdated: new Date(),
+        samples: 1
+      };
 
-    this.profiles.set(target, profile);
-    logger.info('Baseline profile created', { target });
+      this.profiles.set(target, profile);
+      logger.info('Baseline profile created with real metrics', { 
+        target,
+        cpuLoad: cpuInfo.currentLoad.toFixed(2),
+        memoryMB: (nodeMemory.heapUsed / 1024 / 1024).toFixed(2)
+      });
+      
+    } catch (error) {
+      logger.error('Failed to create baseline profile', { target, error });
+    }
   }
 
   private updateProfile(operationName: string, metrics: PerformanceMetrics): void {
@@ -927,10 +1064,90 @@ export class PerformanceProfiler extends EventEmitter {
   }
 
   private setupCleanupScheduler(): void {
-    // Schedule daily cleanup
+    // Schedule periodic cleanup based on aggregation interval
     setInterval(() => {
-      this.cleanup();
-    }, 24 * 60 * 60 * 1000);
+      this.performPeriodicCleanup();
+    }, this.config.aggregationInterval * 1000 * 10); // Every 10 aggregation intervals
+  }
+
+  /**
+   * Setup resource monitoring event handlers
+   */
+  private setupResourceMonitoring(): void {
+    this.resourceMonitor.on('memory_threshold_exceeded', (data) => {
+      logger.warn('Memory threshold exceeded, triggering cleanup', data);
+      this.performMemoryPressureCleanup();
+    });
+
+    this.resourceMonitor.on('size_limit_exceeded', (data) => {
+      logger.warn('Resource size limit exceeded', data);
+      this.emit('resource_limit_exceeded', data);
+    });
+
+    this.resourceMonitor.on('resource_stale', (data) => {
+      logger.debug('Stale resource detected', data);
+    });
+  }
+
+  /**
+   * Perform cleanup during memory pressure
+   */
+  private performMemoryPressureCleanup(): void {
+    // Clear old alerts
+    const alertsToKeep = Math.floor(this.alerts.length * 0.7);
+    this.alerts.splice(0, this.alerts.length - alertsToKeep);
+
+    // Clear old bottlenecks
+    const bottlenecksToKeep = Math.floor(this.bottlenecks.length * 0.7);
+    this.bottlenecks.splice(0, this.bottlenecks.length - bottlenecksToKeep);
+
+    // Clear old opportunities
+    const opportunitiesToKeep = Math.floor(this.opportunities.length * 0.7);
+    this.opportunities.splice(0, this.opportunities.length - opportunitiesToKeep);
+
+    // Clear least recently used metrics
+    const cutoff = new Date(Date.now() - (this.config.retentionPeriod * 24 * 60 * 60 * 1000) / 2);
+    for (const [operation, metrics] of this.metrics.entries()) {
+      const filteredMetrics = metrics.filter(m => m.timestamp >= cutoff);
+      if (filteredMetrics.length !== metrics.length) {
+        this.metrics.set(operation, filteredMetrics);
+      }
+    }
+
+    // Trigger cache manager cleanup
+    this.cacheManager.handleMemoryPressure();
+
+    logger.info('Memory pressure cleanup completed');
+  }
+
+  /**
+   * Perform periodic cleanup
+   */
+  private performPeriodicCleanup(): void {
+    const retentionMs = this.config.retentionPeriod * 24 * 60 * 60 * 1000;
+    const cutoff = new Date(Date.now() - retentionMs);
+
+    // Clean metrics
+    for (const [operation, metrics] of this.metrics.entries()) {
+      const filteredMetrics = metrics.filter(m => m.timestamp >= cutoff);
+      if (filteredMetrics.length !== metrics.length) {
+        this.metrics.set(operation, filteredMetrics);
+      }
+    }
+
+    // Clean alerts
+    const recentAlerts = this.alerts.filter(alert => alert.timestamp >= cutoff);
+    this.alerts.length = 0;
+    this.alerts.push(...recentAlerts);
+
+    // Clean profiles
+    for (const [operation, profile] of this.profiles.entries()) {
+      if (profile.lastUpdated < cutoff) {
+        this.profiles.delete(operation);
+      }
+    }
+
+    logger.debug('Periodic cleanup completed', { cutoff });
   }
 
   private generateOperationId(): string {

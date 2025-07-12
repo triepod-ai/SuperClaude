@@ -1,0 +1,114 @@
+{
+  "environment": "production",
+  "database": {
+    "type": "postgresql",
+    "postgresql": {
+      "host": "${DATABASE_HOST}",
+      "port": "${DATABASE_PORT}",
+      "database": "${DATABASE_NAME}",
+      "username": "${DATABASE_USER}",
+      "password": "${DATABASE_PASSWORD}",
+      "ssl": true,
+      "maxConnections": 50,
+      "idleTimeoutMs": 30000,
+      "connectionTimeoutMs": 5000
+    }
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "destination": "file",
+    "fileOptions": {
+      "path": "/var/log/superclaude/app.log",
+      "maxFiles": 10,
+      "maxSize": "50MB"
+    }
+  },
+  "performance": {
+    "metricsEnabled": true,
+    "metricsRetentionDays": 90,
+    "enableProfiling": false,
+    "profileSampleRate": 0.01
+  },
+  "security": {
+    "enableRateLimit": true,
+    "rateLimitRequests": 100,
+    "rateLimitWindow": 15,
+    "enableCors": true,
+    "corsOrigins": [
+      "https://superclaude.ai",
+      "https://app.superclaude.ai",
+      "https://api.superclaude.ai"
+    ],
+    "enableAuth": true,
+    "authSecret": "${JWT_SECRET}"
+  },
+  "features": {
+    "enableTaskPersistence": true,
+    "enablePerformanceMetrics": true,
+    "enableHealthChecks": true,
+    "enableApiDocs": false,
+    "maxConcurrentOperations": 50,
+    "operationTimeoutMs": 30000
+  },
+  "mcp": {
+    "servers": {
+      "superclaude-tasks": {
+        "enabled": true,
+        "host": "${TASKS_SERVER_HOST}",
+        "port": "${TASKS_SERVER_PORT}",
+        "timeout": 5000,
+        "retries": 3,
+        "healthCheckInterval": 60000
+      },
+      "superclaude-orchestrator": {
+        "enabled": true,
+        "host": "${ORCHESTRATOR_SERVER_HOST}",
+        "port": "${ORCHESTRATOR_SERVER_PORT}",
+        "timeout": 10000,
+        "retries": 3,
+        "healthCheckInterval": 60000
+      },
+      "superclaude-code": {
+        "enabled": true,
+        "host": "${CODE_SERVER_HOST}",
+        "port": "${CODE_SERVER_PORT}",
+        "timeout": 5000,
+        "retries": 3,
+        "healthCheckInterval": 60000
+      },
+      "superclaude-intelligence": {
+        "enabled": true,
+        "host": "${INTELLIGENCE_SERVER_HOST}",
+        "port": "${INTELLIGENCE_SERVER_PORT}",
+        "timeout": 5000,
+        "retries": 3,
+        "healthCheckInterval": 60000
+      },
+      "superclaude-ui": {
+        "enabled": true,
+        "host": "${UI_SERVER_HOST}",
+        "port": "${UI_SERVER_PORT}",
+        "timeout": 5000,
+        "retries": 3,
+        "healthCheckInterval": 60000
+      },
+      "superclaude-quality": {
+        "enabled": true,
+        "host": "${QUALITY_SERVER_HOST}",
+        "port": "${QUALITY_SERVER_PORT}",
+        "timeout": 5000,
+        "retries": 3,
+        "healthCheckInterval": 60000
+      },
+      "superclaude-performance": {
+        "enabled": true,
+        "host": "${PERFORMANCE_SERVER_HOST}",
+        "port": "${PERFORMANCE_SERVER_PORT}",
+        "timeout": 5000,
+        "retries": 3,
+        "healthCheckInterval": 60000
+      }
+    }
+  }
+}

@@ -8,54 +8,815 @@ import {
   ModelCapability,
   ModelProviderError
 } from '../types/index.js';
+import { AsyncMutex, AtomicCounter, ThreadSafeMap, AtomicBoolean } from '../utils/concurrency.js';
 
 /**
  * Coordinates multiple AI model providers for enhanced responses
- * Inspired by Claude Task Master patterns for multi-model abstraction
+ * Thread-safe with atomic operations for provider health management
  */
 export class ModelCoordinator extends EventEmitter {
-  private providers: Map<AIProvider, ProviderClient>;
-  private capabilityMatrix: Map<AIProvider, ModelCapability[]>;
-  private providerHealth: Map<AIProvider, ProviderHealthStatus>;
+  private providers: ThreadSafeMap<AIProvider, ProviderClient>;
+  private capabilityMatrix: ThreadSafeMap<AIProvider, ModelCapability[]>;
+  private providerHealth: ThreadSafeMap<AIProvider, ProviderHealthStatus>;
+  private healthMutex: AsyncMutex;
+  private requestMutex: AsyncMutex;
+  private cleanupMutex: AsyncMutex;
+  private activeRequests: AtomicCounter;
+  private isShuttingDown: AtomicBoolean;
 
   constructor() {
     super();
-    this.providers = new Map();
-    this.capabilityMatrix = new Map();
-    this.providerHealth = new Map();
+    this.providers = new ThreadSafeMap();
+    this.capabilityMatrix = new ThreadSafeMap();
+    this.providerHealth = new ThreadSafeMap();
+    this.healthMutex = new AsyncMutex();
+    this.requestMutex = new AsyncMutex();
+    this.cleanupMutex = new AsyncMutex();
+    this.activeRequests = new AtomicCounter();
+    this.isShuttingDown = new AtomicBoolean(false);
     
     this.initializeProviders();
     this.initializeCapabilityMatrix();
   }
 
   /**
-   * Initialize available AI providers
+   * Initialize available AI providers with thread safety
    */
-  private initializeProviders(): void {
-    // Claude provider (primary)
-    this.providers.set('claude', new ClaudeProvider());
+  private async initializeProviders(): Promise<void> {
+    // Initialize providers with environment-based API keys
+    const openaiApiKey = process.env.OPENAI_API_KEY;
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+    const googleApiKey = process.env.GOOGLE_API_KEY;
     
-    // Mock providers for other models (would be implemented with actual APIs)
-    this.providers.set('openai-gpt4', new OpenAIProvider('gpt-4'));
-    this.providers.set('openai-gpt3.5', new OpenAIProvider('gpt-3.5-turbo'));
-    this.providers.set('google-gemini', new GeminiProvider());
+    // OpenAI providers
+    if (openaiApiKey) {
+      await this.providers.set('openai-gpt4', new OpenAIProvider('gpt-4', openaiApiKey));
+      await this.providers.set('openai-gpt3.5', new OpenAIProvider('gpt-3.5-turbo', openaiApiKey));
+      await this.providers.set('openai-gpt4-turbo', new OpenAIProvider('gpt-4-turbo-preview', openaiApiKey));
+    }
     
-    // Initialize health status
-    for (const provider of this.providers.keys()) {
-      this.providerHealth.set(provider, {
+    // Anthropic Claude provider
+    if (anthropicApiKey) {
+      await this.providers.set('claude', new ClaudeProvider(anthropicApiKey));
+      await this.providers.set('claude-opus', new ClaudeProvider(anthropicApiKey, 'claude-3-opus-20240229'));
+      await this.providers.set('claude-sonnet', new ClaudeProvider(anthropicApiKey, 'claude-3-sonnet-20240229'));
+    }
+    
+    // Google Gemini provider
+    if (googleApiKey) {
+      await this.providers.set('google-gemini', new GeminiProvider(googleApiKey));
+      await this.providers.set('google-gemini-pro', new GeminiProvider(googleApiKey, 'gemini-pro'));
+    }
+    
+    // Initialize health status atomically
+    const providers = await this.providers.keys();
+    for (const provider of providers) {
+      await this.providerHealth.set(provider, {
         isHealthy: true,
         lastCheck: new Date(),
         responseTime: 0,
-        errorRate: 0
+        errorRate: 0,
+        requestCount: 0,
+        lastError: undefined
       });
     }
     
     logger.info('Model providers initialized', {
-      providerCount: this.providers.size
+      providerCount: await this.providers.size(),
+      enabledProviders: providers,
+      apiKeysPresent: {
+        openai: !!openaiApiKey,
+        anthropic: !!anthropicApiKey,
+        google: !!googleApiKey
+      }
     });
   }
 
   /**
-   * Initialize capability matrix for providers
+   * Initialize capability matrix for providers with thread safety
    */
-  private initializeCapabilityMatrix(): void {\n    this.capabilityMatrix.set('claude', [\n      'text-generation',\n      'code-analysis', \n      'reasoning',\n      'creative-writing',\n      'summarization',\n      'qa-answering'\n    ]);\n    \n    this.capabilityMatrix.set('openai-gpt4', [\n      'text-generation',\n      'code-analysis',\n      'reasoning', \n      'creative-writing',\n      'summarization'\n    ]);\n    \n    this.capabilityMatrix.set('openai-gpt3.5', [\n      'text-generation',\n      'summarization',\n      'qa-answering'\n    ]);\n    \n    this.capabilityMatrix.set('google-gemini', [\n      'text-generation',\n      'reasoning',\n      'translation',\n      'summarization'\n    ]);\n  }\n\n  /**\n   * Execute multi-model request\n   */\n  async executeRequest(request: MultiModelRequest): Promise<ModelResponse[]> {\n    try {\n      // Select optimal providers\n      const selectedProviders = await this.selectProviders(request);\n      \n      logger.info('Executing request with providers', {\n        requestId: request.id,\n        providers: selectedProviders,\n        strategy: request.fallbackStrategy\n      });\n      \n      // Execute based on fallback strategy\n      switch (request.fallbackStrategy) {\n        case 'parallel':\n          return await this.executeParallel(request, selectedProviders);\n        case 'sequential':\n          return await this.executeSequential(request, selectedProviders);\n        case 'consensus':\n          return await this.executeConsensus(request, selectedProviders);\n        default:\n          throw new Error(`Unknown fallback strategy: ${request.fallbackStrategy}`);\n      }\n      \n    } catch (error) {\n      logger.error('Multi-model request execution failed', {\n        requestId: request.id,\n        error: error instanceof Error ? error.message : 'Unknown error'\n      });\n      throw error;\n    }\n  }\n\n  /**\n   * Select optimal providers for request\n   */\n  private async selectProviders(request: MultiModelRequest): Promise<AIProvider[]> {\n    let candidates: AIProvider[] = [];\n    \n    // Start with preferred providers if specified\n    if (request.preferredProviders && request.preferredProviders.length > 0) {\n      candidates = request.preferredProviders.filter(provider => \n        this.providers.has(provider) && this.isProviderHealthy(provider)\n      );\n    }\n    \n    // If no valid preferred providers, find by capabilities\n    if (candidates.length === 0) {\n      candidates = this.findProvidersByCapabilities(request.requiredCapabilities);\n    }\n    \n    // Filter by health and limit count\n    const healthyCandidates = candidates\n      .filter(provider => this.isProviderHealthy(provider))\n      .slice(0, request.maxProviders);\n    \n    if (healthyCandidates.length === 0) {\n      throw new ModelProviderError(\n        'No healthy providers available for request',\n        'claude', // fallback to claude\n        { requiredCapabilities: request.requiredCapabilities }\n      );\n    }\n    \n    return healthyCandidates;\n  }\n\n  /**\n   * Find providers by required capabilities\n   */\n  private findProvidersByCapabilities(capabilities: ModelCapability[]): AIProvider[] {\n    const candidates: AIProvider[] = [];\n    \n    for (const [provider, providerCapabilities] of this.capabilityMatrix.entries()) {\n      const hasAllCapabilities = capabilities.every(cap => \n        providerCapabilities.includes(cap)\n      );\n      \n      if (hasAllCapabilities) {\n        candidates.push(provider);\n      }\n    }\n    \n    // Sort by capability count (more capable providers first)\n    return candidates.sort((a, b) => {\n      const aCaps = this.capabilityMatrix.get(a)?.length || 0;\n      const bCaps = this.capabilityMatrix.get(b)?.length || 0;\n      return bCaps - aCaps;\n    });\n  }\n\n  /**\n   * Execute requests in parallel\n   */\n  private async executeParallel(request: MultiModelRequest, providers: AIProvider[]): Promise<ModelResponse[]> {\n    const promises = providers.map(provider => \n      this.executeWithProvider(request, provider)\n    );\n    \n    try {\n      const responses = await Promise.allSettled(promises);\n      \n      return responses\n        .filter((result): result is PromiseFulfilledResult<ModelResponse> => \n          result.status === 'fulfilled'\n        )\n        .map(result => result.value);\n        \n    } catch (error) {\n      logger.error('Parallel execution failed', {\n        requestId: request.id,\n        providers,\n        error: error instanceof Error ? error.message : 'Unknown error'\n      });\n      throw error;\n    }\n  }\n\n  /**\n   * Execute requests sequentially with fallback\n   */\n  private async executeSequential(request: MultiModelRequest, providers: AIProvider[]): Promise<ModelResponse[]> {\n    const responses: ModelResponse[] = [];\n    let lastError: Error | null = null;\n    \n    for (const provider of providers) {\n      try {\n        const response = await this.executeWithProvider(request, provider);\n        responses.push(response);\n        \n        // If we get a high-confidence response, we can stop\n        if (response.confidence > 0.8) {\n          break;\n        }\n        \n      } catch (error) {\n        lastError = error instanceof Error ? error : new Error('Unknown error');\n        logger.warn('Provider failed, trying next', {\n          provider,\n          error: lastError.message\n        });\n        \n        // Mark provider as unhealthy temporarily\n        this.updateProviderHealth(provider, false);\n        continue;\n      }\n    }\n    \n    if (responses.length === 0 && lastError) {\n      throw lastError;\n    }\n    \n    return responses;\n  }\n\n  /**\n   * Execute with consensus approach\n   */\n  private async executeConsensus(request: MultiModelRequest, providers: AIProvider[]): Promise<ModelResponse[]> {\n    // Execute in parallel\n    const responses = await this.executeParallel(request, providers);\n    \n    if (responses.length < 2) {\n      return responses;\n    }\n    \n    // Simple consensus: return responses with above-average confidence\n    const avgConfidence = responses.reduce((sum, r) => sum + r.confidence, 0) / responses.length;\n    \n    return responses.filter(response => response.confidence >= avgConfidence);\n  }\n\n  /**\n   * Execute request with specific provider\n   */\n  private async executeWithProvider(request: MultiModelRequest, provider: AIProvider): Promise<ModelResponse> {\n    const startTime = Date.now();\n    \n    try {\n      const providerClient = this.providers.get(provider);\n      if (!providerClient) {\n        throw new ModelProviderError(`Provider not found: ${provider}`, provider);\n      }\n      \n      // Create prompt for the task\n      const prompt = this.createPromptForTask(request);\n      \n      // Execute with provider\n      const response = await providerClient.generateResponse(prompt, {\n        timeout: request.timeout,\n        maxTokens: 4000\n      });\n      \n      const executionTime = Date.now() - startTime;\n      \n      // Update provider health\n      this.updateProviderHealth(provider, true, executionTime);\n      \n      const modelResponse: ModelResponse = {\n        provider,\n        requestId: request.id,\n        taskId: request.task.id,\n        response: response.text,\n        confidence: response.confidence || 0.7,\n        tokenUsage: response.tokenUsage || 0,\n        executionTime,\n        metadata: response.metadata || {},\n        timestamp: new Date()\n      };\n      \n      // Emit success event\n      this.emit('response-received', modelResponse);\n      \n      return modelResponse;\n      \n    } catch (error) {\n      const executionTime = Date.now() - startTime;\n      \n      // Update provider health\n      this.updateProviderHealth(provider, false, executionTime);\n      \n      const providerError = new ModelProviderError(\n        `Provider execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,\n        provider,\n        { requestId: request.id, executionTime }\n      );\n      \n      // Emit error event\n      this.emit('provider-error', providerError);\n      \n      throw providerError;\n    }\n  }\n\n  /**\n   * Create prompt for task\n   */\n  private createPromptForTask(request: MultiModelRequest): string {\n    const task = request.task;\n    \n    let prompt = `Task: ${task.title}\n`;\n    \n    if (task.description) {\n      prompt += `Description: ${task.description}\n`;\n    }\n    \n    if (task.tags && task.tags.length > 0) {\n      prompt += `Tags: ${task.tags.join(', ')}\n`;\n    }\n    \n    prompt += `Priority: ${task.priority}\n`;\n    prompt += `Complexity: ${task.complexity}\n`;\n    \n    if (request.requiredCapabilities.length > 0) {\n      prompt += `Required capabilities: ${request.requiredCapabilities.join(', ')}\n`;\n    }\n    \n    prompt += `\nPlease provide a comprehensive response for this task.`;\n    \n    return prompt;\n  }\n\n  /**\n   * Check if provider is healthy\n   */\n  private isProviderHealthy(provider: AIProvider): boolean {\n    const health = this.providerHealth.get(provider);\n    return health?.isHealthy ?? false;\n  }\n\n  /**\n   * Update provider health status\n   */\n  private updateProviderHealth(provider: AIProvider, success: boolean, responseTime?: number): void {\n    const health = this.providerHealth.get(provider);\n    if (!health) return;\n    \n    health.lastCheck = new Date();\n    \n    if (responseTime !== undefined) {\n      health.responseTime = (health.responseTime + responseTime) / 2; // Moving average\n    }\n    \n    if (success) {\n      health.isHealthy = true;\n      health.errorRate = Math.max(0, health.errorRate - 0.1);\n    } else {\n      health.errorRate = Math.min(1, health.errorRate + 0.2);\n      health.isHealthy = health.errorRate < 0.5;\n    }\n  }\n\n  /**\n   * Get provider health status\n   */\n  getProviderHealth(): Map<AIProvider, ProviderHealthStatus> {\n    return new Map(this.providerHealth);\n  }\n\n  /**\n   * Cleanup resources\n   */\n  async cleanup(): Promise<void> {\n    try {\n      // Cleanup provider clients\n      for (const [provider, client] of this.providers.entries()) {\n        await client.cleanup?.();\n      }\n      \n      this.providers.clear();\n      this.capabilityMatrix.clear();\n      this.providerHealth.clear();\n      \n      logger.info('ModelCoordinator cleanup completed');\n      \n    } catch (error) {\n      logger.error('Error during ModelCoordinator cleanup', {\n        error: error instanceof Error ? error.message : 'Unknown error'\n      });\n      throw error;\n    }\n  }\n}\n\n// ==================== PROVIDER INTERFACES ====================\n\ninterface ProviderHealthStatus {\n  isHealthy: boolean;\n  lastCheck: Date;\n  responseTime: number;\n  errorRate: number;\n}\n\ninterface ProviderResponse {\n  text: string;\n  confidence?: number;\n  tokenUsage?: number;\n  metadata?: Record<string, unknown>;\n}\n\ninterface ProviderOptions {\n  timeout?: number;\n  maxTokens?: number;\n}\n\nabstract class ProviderClient {\n  abstract generateResponse(prompt: string, options?: ProviderOptions): Promise<ProviderResponse>;\n  async cleanup?(): Promise<void> {}\n}\n\n// ==================== PROVIDER IMPLEMENTATIONS ====================\n\n/**\n * Claude provider implementation\n */\nclass ClaudeProvider extends ProviderClient {\n  async generateResponse(prompt: string, options?: ProviderOptions): Promise<ProviderResponse> {\n    // Mock implementation - would use actual Claude API\n    await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));\n    \n    return {\n      text: `Claude response for: ${prompt.substring(0, 50)}...`,\n      confidence: 0.85 + Math.random() * 0.1,\n      tokenUsage: 150 + Math.floor(Math.random() * 100),\n      metadata: { provider: 'claude', model: 'claude-3' }\n    };\n  }\n}\n\n/**\n * OpenAI provider implementation\n */\nclass OpenAIProvider extends ProviderClient {\n  constructor(private model: string) {\n    super();\n  }\n  \n  async generateResponse(prompt: string, options?: ProviderOptions): Promise<ProviderResponse> {\n    // Mock implementation - would use actual OpenAI API\n    await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300));\n    \n    return {\n      text: `OpenAI ${this.model} response for: ${prompt.substring(0, 50)}...`,\n      confidence: 0.75 + Math.random() * 0.15,\n      tokenUsage: 120 + Math.floor(Math.random() * 80),\n      metadata: { provider: 'openai', model: this.model }\n    };\n  }\n}\n\n/**\n * Google Gemini provider implementation\n */\nclass GeminiProvider extends ProviderClient {\n  async generateResponse(prompt: string, options?: ProviderOptions): Promise<ProviderResponse> {\n    // Mock implementation - would use actual Gemini API\n    await new Promise(resolve => setTimeout(resolve, 150 + Math.random() * 250));\n    \n    return {\n      text: `Gemini response for: ${prompt.substring(0, 50)}...`,\n      confidence: 0.8 + Math.random() * 0.1,\n      tokenUsage: 130 + Math.floor(Math.random() * 90),\n      metadata: { provider: 'google', model: 'gemini-pro' }\n    };\n  }\n}"
+  private async initializeCapabilityMatrix(): Promise<void> {
+    await this.capabilityMatrix.set('claude', [
+      'text-generation',
+      'code-analysis', 
+      'reasoning',
+      'creative-writing',
+      'summarization',
+      'qa-answering'
+    ]);
+    
+    await this.capabilityMatrix.set('openai-gpt4', [
+      'text-generation',
+      'code-analysis',
+      'reasoning', 
+      'creative-writing',
+      'summarization'
+    ]);
+    
+    await this.capabilityMatrix.set('openai-gpt3.5', [
+      'text-generation',
+      'summarization',
+      'qa-answering'
+    ]);
+    
+    await this.capabilityMatrix.set('google-gemini', [
+      'text-generation',
+      'reasoning',
+      'translation',
+      'summarization'
+    ]);
+  }
+
+  /**
+   * Execute multi-model request with proper synchronization
+   */
+  async executeRequest(request: MultiModelRequest): Promise<ModelResponse[]> {
+    // Check if shutting down
+    if (this.isShuttingDown.get()) {
+      throw new ModelProviderError('ModelCoordinator is shutting down', 'claude');
+    }
+
+    const requestRelease = await this.requestMutex.acquire();
+    await this.activeRequests.increment();
+    
+    try {
+      // Select optimal providers
+      const selectedProviders = await this.selectProviders(request);
+      
+      logger.info('Executing request with providers', {
+        requestId: request.id,
+        providers: selectedProviders,
+        strategy: request.fallbackStrategy,
+        activeRequests: this.activeRequests.get()
+      });
+      
+      // Execute based on fallback strategy
+      let responses: ModelResponse[];
+      switch (request.fallbackStrategy) {
+        case 'parallel':
+          responses = await this.executeParallel(request, selectedProviders);
+          break;
+        case 'sequential':
+          responses = await this.executeSequential(request, selectedProviders);
+          break;
+        case 'consensus':
+          responses = await this.executeConsensus(request, selectedProviders);
+          break;
+        default:
+          throw new Error(`Unknown fallback strategy: ${request.fallbackStrategy}`);
+      }
+
+      logger.info('Multi-model request completed', {
+        requestId: request.id,
+        responseCount: responses.length,
+        providers: responses.map(r => r.provider)
+      });
+
+      return responses;
+      
+    } catch (error) {
+      logger.error('Multi-model request execution failed', {
+        requestId: request.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      throw error;
+    } finally {
+      await this.activeRequests.decrement();
+      requestRelease();
+    }
+  }
+
+  /**
+   * Select optimal providers for request with thread-safe health checks
+   */
+  private async selectProviders(request: MultiModelRequest): Promise<AIProvider[]> {
+    let candidates: AIProvider[] = [];
+    
+    // Start with preferred providers if specified
+    if (request.preferredProviders && request.preferredProviders.length > 0) {
+      for (const provider of request.preferredProviders) {
+        const hasProvider = await this.providers.has(provider);
+        const isHealthy = await this.isProviderHealthy(provider);
+        if (hasProvider && isHealthy) {
+          candidates.push(provider);
+        }
+      }
+    }
+    
+    // If no valid preferred providers, find by capabilities
+    if (candidates.length === 0) {
+      candidates = await this.findProvidersByCapabilities(request.requiredCapabilities);
+    }
+    
+    // Filter by health and limit count
+    const healthyCandidates: AIProvider[] = [];
+    for (const provider of candidates) {
+      const isHealthy = await this.isProviderHealthy(provider);
+      if (isHealthy) {
+        healthyCandidates.push(provider);
+        if (healthyCandidates.length >= request.maxProviders) {
+          break;
+        }
+      }
+    }
+    
+    if (healthyCandidates.length === 0) {
+      throw new ModelProviderError(
+        'No healthy providers available for request',
+        'claude', // fallback to claude
+        { requiredCapabilities: request.requiredCapabilities }
+      );
+    }
+    
+    return healthyCandidates;
+  }
+
+  /**
+   * Find providers by required capabilities with thread safety
+   */
+  private async findProvidersByCapabilities(capabilities: ModelCapability[]): Promise<AIProvider[]> {
+    const candidates: { provider: AIProvider; capabilityCount: number }[] = [];
+    
+    const capabilities_entries = await this.capabilityMatrix.entries();
+    for (const [provider, providerCapabilities] of capabilities_entries) {
+      const hasAllCapabilities = capabilities.every(cap => 
+        providerCapabilities.includes(cap)
+      );
+      
+      if (hasAllCapabilities) {
+        candidates.push({
+          provider,
+          capabilityCount: providerCapabilities.length
+        });
+      }
+    }
+    
+    // Sort by capability count (more capable providers first)
+    return candidates
+      .sort((a, b) => b.capabilityCount - a.capabilityCount)
+      .map(c => c.provider);
+  }
+
+  /**
+   * Execute requests in parallel with atomic result handling
+   */
+  private async executeParallel(request: MultiModelRequest, providers: AIProvider[]): Promise<ModelResponse[]> {
+    const promises = providers.map(provider => 
+      this.executeWithProvider(request, provider)
+    );
+    
+    try {
+      const results = await Promise.allSettled(promises);
+      
+      const responses: ModelResponse[] = [];
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          responses.push(result.value);
+        } else {
+          logger.warn('Provider failed in parallel execution', {
+            requestId: request.id,
+            error: result.reason
+          });
+        }
+      }
+
+      return responses;
+        
+    } catch (error) {
+      logger.error('Parallel execution failed', {
+        requestId: request.id,
+        providers,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Execute requests sequentially with fallback and atomic health updates
+   */
+  private async executeSequential(request: MultiModelRequest, providers: AIProvider[]): Promise<ModelResponse[]> {
+    const responses: ModelResponse[] = [];
+    let lastError: Error | null = null;
+    
+    for (const provider of providers) {
+      try {
+        const response = await this.executeWithProvider(request, provider);
+        responses.push(response);
+        
+        // If we get a high-confidence response, we can stop
+        if (response.confidence > 0.8) {
+          break;
+        }
+        
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error('Unknown error');
+        logger.warn('Provider failed, trying next', {
+          provider,
+          error: lastError.message
+        });
+        
+        // Mark provider as unhealthy temporarily
+        await this.updateProviderHealth(provider, false, 0, lastError.message);
+        continue;
+      }
+    }
+    
+    if (responses.length === 0 && lastError) {
+      throw lastError;
+    }
+    
+    return responses;
+  }
+
+  /**
+   * Execute with consensus approach
+   */
+  private async executeConsensus(request: MultiModelRequest, providers: AIProvider[]): Promise<ModelResponse[]> {
+    // Execute in parallel
+    const responses = await this.executeParallel(request, providers);
+    
+    if (responses.length < 2) {
+      return responses;
+    }
+    
+    // Simple consensus: return responses with above-average confidence
+    const avgConfidence = responses.reduce((sum, r) => sum + r.confidence, 0) / responses.length;
+    
+    return responses.filter(response => response.confidence >= avgConfidence);
+  }
+
+  /**
+   * Execute request with specific provider and atomic health tracking
+   */
+  private async executeWithProvider(request: MultiModelRequest, provider: AIProvider): Promise<ModelResponse> {
+    const startTime = Date.now();
+    
+    try {
+      const providerClient = await this.providers.get(provider);
+      if (!providerClient) {
+        throw new ModelProviderError(`Provider not found: ${provider}`, provider);
+      }
+      
+      // Create prompt for the task
+      const prompt = this.createPromptForTask(request);
+      
+      // Execute with provider
+      const response = await providerClient.generateResponse(prompt, {
+        timeout: request.timeout,
+        maxTokens: 4000
+      });
+      
+      const executionTime = Date.now() - startTime;
+      
+      // Atomically update provider health
+      await this.updateProviderHealth(provider, true, executionTime);
+      
+      const modelResponse: ModelResponse = {
+        provider,
+        requestId: request.id,
+        taskId: request.task.id,
+        response: response.text,
+        confidence: response.confidence || 0.7,
+        tokenUsage: response.tokenUsage || 0,
+        executionTime,
+        metadata: response.metadata || {},
+        timestamp: new Date()
+      };
+      
+      // Emit success event
+      this.emit('response-received', modelResponse);
+      
+      return modelResponse;
+      
+    } catch (error) {
+      const executionTime = Date.now() - startTime;
+      
+      // Atomically update provider health
+      await this.updateProviderHealth(provider, false, executionTime, error instanceof Error ? error.message : 'Unknown error');
+      
+      const providerError = new ModelProviderError(
+        `Provider execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        provider,
+        { requestId: request.id, executionTime }
+      );
+      
+      // Emit error event
+      this.emit('provider-error', providerError);
+      
+      throw providerError;
+    }
+  }
+
+  /**
+   * Create prompt for task
+   */
+  private createPromptForTask(request: MultiModelRequest): string {
+    const task = request.task;
+    
+    let prompt = `Task: ${task.title}\n`;
+    
+    if (task.description) {
+      prompt += `Description: ${task.description}\n`;
+    }
+    
+    if (task.tags && task.tags.length > 0) {
+      prompt += `Tags: ${task.tags.join(', ')}\n`;
+    }
+    
+    prompt += `Priority: ${task.priority}\n`;
+    prompt += `Complexity: ${task.complexity}\n`;
+    
+    if (request.requiredCapabilities.length > 0) {
+      prompt += `Required capabilities: ${request.requiredCapabilities.join(', ')}\n`;
+    }
+    
+    prompt += `\nPlease provide a comprehensive response for this task.`;
+    
+    return prompt;
+  }
+
+  /**
+   * Check if provider is healthy (thread-safe)
+   */
+  private async isProviderHealthy(provider: AIProvider): Promise<boolean> {
+    const health = await this.providerHealth.get(provider);
+    if (!health) return false;
+    
+    // Consider provider unhealthy if error rate is too high or if it's been offline too long
+    const timeSinceLastCheck = Date.now() - health.lastCheck.getTime();
+    const isStale = timeSinceLastCheck > 300000; // 5 minutes
+    
+    return health.isHealthy && !isStale && health.errorRate < 0.5;
+  }
+
+  /**
+   * Atomically update provider health status
+   */
+  private async updateProviderHealth(
+    provider: AIProvider, 
+    success: boolean, 
+    responseTime?: number, 
+    errorMessage?: string
+  ): Promise<void> {
+    const healthRelease = await this.healthMutex.acquire();
+    
+    try {
+      const currentHealth = await this.providerHealth.get(provider);
+      if (!currentHealth) return;
+      
+      const updatedHealth: ProviderHealthStatus = {
+        ...currentHealth,
+        lastCheck: new Date(),
+        requestCount: currentHealth.requestCount + 1
+      };
+      
+      if (responseTime !== undefined) {
+        // Moving average of response time
+        const alpha = 0.3; // weight for new value
+        updatedHealth.responseTime = currentHealth.responseTime === 0 
+          ? responseTime 
+          : (alpha * responseTime) + ((1 - alpha) * currentHealth.responseTime);
+      }
+      
+      if (success) {
+        updatedHealth.isHealthy = true;
+        updatedHealth.errorRate = Math.max(0, currentHealth.errorRate - 0.1);
+        updatedHealth.lastError = undefined;
+      } else {
+        updatedHealth.errorRate = Math.min(1, currentHealth.errorRate + 0.2);
+        updatedHealth.isHealthy = updatedHealth.errorRate < 0.5;
+        updatedHealth.lastError = errorMessage;
+      }
+      
+      await this.providerHealth.set(provider, updatedHealth);
+      
+      // Emit health change event if status changed
+      if (currentHealth.isHealthy !== updatedHealth.isHealthy) {
+        this.emit('provider-health-changed', {
+          provider,
+          isHealthy: updatedHealth.isHealthy,
+          errorRate: updatedHealth.errorRate,
+          timestamp: new Date()
+        });
+      }
+      
+    } finally {
+      healthRelease();
+    }
+  }
+
+  /**
+   * Get provider health status (thread-safe)
+   */
+  async getProviderHealth(): Promise<Map<AIProvider, ProviderHealthStatus>> {
+    const healthEntries = await this.providerHealth.entries();
+    return new Map(healthEntries);
+  }
+
+  /**
+   * Get provider statistics
+   */
+  async getProviderStats(): Promise<{
+    totalProviders: number;
+    healthyProviders: number;
+    activeRequests: number;
+    isShuttingDown: boolean;
+  }> {
+    const healthEntries = await this.providerHealth.entries();
+    const healthyCount = healthEntries.filter(([, health]) => health.isHealthy).length;
+    
+    return {
+      totalProviders: this.providers.size,
+      healthyProviders: healthyCount,
+      activeRequests: this.activeRequests.get(),
+      isShuttingDown: this.isShuttingDown.get()
+    };
+  }
+
+  /**
+   * Reset provider health (useful for recovery)
+   */
+  async resetProviderHealth(provider: AIProvider): Promise<void> {
+    const healthRelease = await this.healthMutex.acquire();
+    try {
+      await this.providerHealth.updateIfExists(provider, (health) => ({
+        ...health,
+        isHealthy: true,
+        errorRate: 0,
+        lastError: undefined,
+        lastCheck: new Date()
+      }));
+      
+      logger.info('Provider health reset', { provider });
+    } finally {
+      healthRelease();
+    }
+  }
+
+  /**
+   * Cleanup resources with proper synchronization
+   */
+  async cleanup(): Promise<void> {
+    // Mark as shutting down
+    await this.isShuttingDown.set(true);
+    
+    const cleanupRelease = await this.cleanupMutex.acquire();
+    try {
+      logger.info('Starting ModelCoordinator cleanup', {
+        activeRequests: this.activeRequests.get(),
+        totalProviders: this.providers.size
+      });
+      
+      // Wait for active requests to complete (with timeout)
+      const maxWaitTime = 30000; // 30 seconds
+      const startTime = Date.now();
+      
+      while (this.activeRequests.get() > 0 && (Date.now() - startTime) < maxWaitTime) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      if (this.activeRequests.get() > 0) {
+        logger.warn('Forcing cleanup with active requests', {
+          remainingRequests: this.activeRequests.get()
+        });
+      }
+      
+      // Cleanup provider clients
+      const providerEntries = await this.providers.entries();
+      const cleanupPromises = providerEntries.map(async ([provider, client]) => {
+        try {
+          await client.cleanup?.();
+        } catch (error) {
+          logger.warn('Failed to cleanup provider client', {
+            provider,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      });
+      
+      await Promise.allSettled(cleanupPromises);
+      
+      // Clear all collections
+      await this.providers.clear();
+      await this.capabilityMatrix.clear();
+      await this.providerHealth.clear();
+      await this.activeRequests.reset();
+      
+      logger.info('ModelCoordinator cleanup completed');
+      
+    } catch (error) {
+      logger.error('Error during ModelCoordinator cleanup', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      throw error;
+    } finally {
+      cleanupRelease();
+    }
+  }
+
+  /**
+   * Graceful shutdown - wait for active requests to complete
+   */
+  async gracefulShutdown(timeoutMs = 30000): Promise<void> {
+    await this.isShuttingDown.set(true);
+    
+    const startTime = Date.now();
+    
+    // Wait for active requests to complete
+    while (this.activeRequests.get() > 0 && (Date.now() - startTime) < timeoutMs) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    // Force cleanup if timeout exceeded
+    if (this.activeRequests.get() > 0) {
+      logger.warn('Graceful shutdown timeout exceeded, forcing cleanup', {
+        remainingRequests: this.activeRequests.get()
+      });
+    }
+    
+    await this.cleanup();
+  }
+}
+
+// ==================== PROVIDER INTERFACES ====================
+
+interface ProviderHealthStatus {
+  isHealthy: boolean;
+  lastCheck: Date;
+  responseTime: number;
+  errorRate: number;
+  requestCount: number;
+  lastError?: string;
+}
+
+interface ProviderResponse {
+  text: string;
+  confidence?: number;
+  tokenUsage?: number;
+  metadata?: Record<string, unknown>;
+}
+
+interface ProviderOptions {
+  timeout?: number;
+  maxTokens?: number;
+}
+
+abstract class ProviderClient {
+  abstract generateResponse(prompt: string, options?: ProviderOptions): Promise<ProviderResponse>;
+  async cleanup?(): Promise<void> {}
+}
+
+// ==================== PROVIDER IMPLEMENTATIONS ====================
+
+/**
+ * Claude provider implementation
+ */
+class ClaudeProvider extends ProviderClient {
+  private client: Anthropic;
+  private model: string;
+
+  constructor(apiKey: string, model: string = 'claude-3-sonnet-20240229') {
+    super();
+    this.client = new Anthropic({ apiKey });
+    this.model = model;
+  }
+
+  async generateResponse(prompt: string, options?: ProviderOptions): Promise<ProviderResponse> {
+    try {
+      const response = await this.client.messages.create({
+        model: this.model,
+        max_tokens: options?.maxTokens || 4000,
+        messages: [{ role: 'user', content: prompt }]
+      });
+
+      const textContent = response.content
+        .filter(block => block.type === 'text')
+        .map(block => (block as any).text)
+        .join('\n');
+
+      return {
+        text: textContent,
+        confidence: 0.9, // Claude typically high confidence
+        tokenUsage: response.usage.input_tokens + response.usage.output_tokens,
+        metadata: { 
+          provider: 'claude', 
+          model: this.model,
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens
+        }
+      };
+    } catch (error) {
+      logger.error('Claude API error', { error: error.message, model: this.model });
+      throw new Error(`Claude API error: ${error.message}`);
+    }
+  }
+
+  async cleanup(): Promise<void> {
+    // Cleanup Claude connection
+    logger.debug('Claude provider cleanup completed');
+  }
+}
+
+/**
+ * OpenAI provider implementation
+ */
+class OpenAIProvider extends ProviderClient {
+  private client: OpenAI;
+  private model: string;
+
+  constructor(model: string, apiKey: string) {
+    super();
+    this.client = new OpenAI({ apiKey });
+    this.model = model;
+  }
+  
+  async generateResponse(prompt: string, options?: ProviderOptions): Promise<ProviderResponse> {
+    try {
+      const response = await this.client.chat.completions.create({
+        model: this.model,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: options?.maxTokens || 4000
+      });
+
+      const message = response.choices[0]?.message;
+      if (!message?.content) {
+        throw new Error('No response content from OpenAI');
+      }
+
+      return {
+        text: message.content,
+        confidence: 0.85, // OpenAI typically high confidence
+        tokenUsage: response.usage?.total_tokens || 0,
+        metadata: { 
+          provider: 'openai', 
+          model: this.model,
+          promptTokens: response.usage?.prompt_tokens,
+          completionTokens: response.usage?.completion_tokens,
+          finishReason: response.choices[0]?.finish_reason
+        }
+      };
+    } catch (error) {
+      logger.error('OpenAI API error', { error: error.message, model: this.model });
+      throw new Error(`OpenAI API error: ${error.message}`);
+    }
+  }
+
+  async cleanup(): Promise<void> {
+    // Cleanup OpenAI connection
+    logger.debug(`OpenAI ${this.model} provider cleanup completed`);
+  }
+}
+
+/**
+ * Google Gemini provider implementation
+ */
+class GeminiProvider extends ProviderClient {
+  private client: GoogleGenerativeAI;
+  private model: string;
+
+  constructor(apiKey: string, model: string = 'gemini-pro') {
+    super();
+    this.client = new GoogleGenerativeAI(apiKey);
+    this.model = model;
+  }
+
+  async generateResponse(prompt: string, options?: ProviderOptions): Promise<ProviderResponse> {
+    try {
+      const model = this.client.getGenerativeModel({ model: this.model });
+      
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+
+      if (!text) {
+        throw new Error('No response content from Gemini');
+      }
+
+      return {
+        text,
+        confidence: 0.8, // Gemini confidence varies
+        tokenUsage: await this.estimateTokens(prompt, text),
+        metadata: { 
+          provider: 'google', 
+          model: this.model,
+          candidates: response.candidates?.length || 1,
+          finishReason: response.candidates?.[0]?.finishReason
+        }
+      };
+    } catch (error) {
+      logger.error('Gemini API error', { error: error.message, model: this.model });
+      throw new Error(`Gemini API error: ${error.message}`);
+    }
+  }
+
+  private async estimateTokens(prompt: string, response: string): Promise<number> {
+    // Rough estimation: ~4 characters per token
+    return Math.ceil((prompt.length + response.length) / 4);
+  }
+
+  async cleanup(): Promise<void> {
+    // Cleanup Gemini connection
+    logger.debug('Gemini provider cleanup completed');
+  }
+}

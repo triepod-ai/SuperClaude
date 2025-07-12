@@ -6,10 +6,18 @@ import {
   ListToolsRequestSchema,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
+import { v4 as uuidv4 } from 'uuid';
 
 import { TaskQueueManager } from './TaskQueue.js';
 import { TaskDecomposer } from './TaskDecomposer.js';
 import { PRDParser } from './PRDParser.js';
+import { DatabaseManager, DatabaseConfig } from './DatabaseManager.js';
+import { EventManager, TaskEvent } from './EventManager.js';
+import { ProviderManager, AIProvider, TaskGenerationRequest, TaskAnalysisRequest } from './ProviderManager.js';
+import { SchedulingEngine, SchedulingAlgorithm, ScheduleConfig } from './SchedulingEngine.js';
+import { LearningEngine, LearningConfig, PredictionRequest, DEFAULT_FEATURES } from './LearningEngine.js';
+import { AnalyticsEngine, MetricType, TimeWindow } from './AnalyticsEngine.js';
+import { LSPIntegration, SupportedLanguage, LSPServerConfig } from './LSPIntegration.js';
 import {
   Task,
   TaskState,
@@ -29,20 +37,40 @@ import {
 } from '../types/index.js';
 
 /**
- * SuperClaude Tasks MCP Server
- * Provides task management, decomposition, and PRD parsing capabilities
+ * SuperClaude Tasks MCP Server - Production Grade
+ * Provides comprehensive task management with AI, analytics, scheduling, and code awareness
  */
 export class SuperClaudeTasksServer {
   private server: Server;
   private taskQueue: TaskQueueManager;
   private decomposer: TaskDecomposer;
   private prdParser: PRDParser;
+  
+  // Production-grade components
+  private databaseManager?: DatabaseManager;
+  private eventManager: EventManager;
+  private providerManager: ProviderManager;
+  private schedulingEngine: SchedulingEngine;
+  private learningEngine: LearningEngine;
+  private analyticsEngine: AnalyticsEngine;
+  private lspIntegration: LSPIntegration;
+  
+  // Configuration
+  private config: {
+    database?: DatabaseConfig;
+    enablePersistence: boolean;
+    enableAnalytics: boolean;
+    enableScheduling: boolean;
+    enableLearning: boolean;
+    enableLSP: boolean;
+    enableAI: boolean;
+  };
 
-  constructor() {
+  constructor(config: any = {}) {
     this.server = new Server(
       {
         name: 'superclaude-tasks',
-        version: '1.0.0',
+        version: '2.0.0',
       },
       {
         capabilities: {
@@ -51,12 +79,110 @@ export class SuperClaudeTasksServer {
       }
     );
 
+    // Initialize configuration
+    this.config = {
+      enablePersistence: config.enablePersistence ?? false,
+      enableAnalytics: config.enableAnalytics ?? true,
+      enableScheduling: config.enableScheduling ?? true,
+      enableLearning: config.enableLearning ?? true,
+      enableLSP: config.enableLSP ?? false,
+      enableAI: config.enableAI ?? false,
+      database: config.database
+    };
+
+    // Initialize database manager if persistence is enabled
+    if (this.config.enablePersistence && this.config.database) {
+      this.databaseManager = new DatabaseManager(this.config.database);
+    }
+
+    // Initialize core components
     this.taskQueue = new TaskQueueManager();
     this.decomposer = new TaskDecomposer();
     this.prdParser = new PRDParser();
+    
+    // Initialize production components
+    this.eventManager = new EventManager({
+      enabled: true,
+      storageType: 'memory',
+      maxEvents: 10000,
+      ttlDays: 30
+    });
+    
+    this.providerManager = new ProviderManager();
+    this.schedulingEngine = new SchedulingEngine();
+    
+    const learningConfig: LearningConfig = {
+      algorithm: 'ensemble',
+      features: DEFAULT_FEATURES,
+      targetVariable: 'duration',
+      hyperparameters: {},
+      validationSplit: 0.2,
+      minTrainingSize: 50,
+      retrainFrequency: 24,
+      enableOnlineUpdates: true,
+      featureSelection: {
+        enabled: true,
+        method: 'correlation',
+        topK: 10
+      }
+    };
+    this.learningEngine = new LearningEngine(learningConfig);
+    
+    this.analyticsEngine = new AnalyticsEngine();
+    this.lspIntegration = new LSPIntegration();
 
+    this.setupIntegrations();
     this.setupToolHandlers();
     this.setupErrorHandling();
+  }
+
+  /**
+   * Setup integrations between components
+   */
+  private setupIntegrations(): void {
+    // Connect event handlers for database operations when persistence is enabled
+    if (this.config.enablePersistence && this.databaseManager) {
+      this.taskQueue.on('taskCreated', async (task: Task) => {
+        await this.eventManager.emitEvent('task.created', { task });
+      });
+      
+      this.taskQueue.on('taskUpdated', async (task: Task) => {
+        await this.eventManager.emitEvent('task.updated', { task });
+      });
+      
+      this.taskQueue.on('taskDeleted', async (taskId: string) => {
+        await this.eventManager.emitEvent('task.deleted', { taskId });
+      });
+    }
+
+    // Connect analytics events
+    if (this.config.enableAnalytics) {
+      this.eventManager.on('task.completed', async (data: any) => {
+        // Learning engine training data collection
+        if (this.config.enableLearning) {
+          const task = data.task;
+          const features = {
+            complexity: task.complexity,
+            priority: task.priority,
+            descriptionLength: task.description?.length || 0,
+            dependencyCount: task.dependencies?.length || 0,
+            tagCount: task.tags?.length || 0
+          };
+          
+          // Note: recordCompletion method would need to be implemented in LearningEngine
+          // This is a placeholder for the learning system integration
+        }
+      });
+    }
+
+    // Connect scheduling engine events
+    if (this.config.enableScheduling) {
+      this.eventManager.on('task.created', async (data: any) => {
+        // Trigger schedule recalculation when new tasks are added
+        // Note: invalidateSchedule method would need to be implemented in SchedulingEngine
+        // This is a placeholder for the scheduling system integration
+      });
+    }
   }
 
   /**
@@ -317,6 +443,181 @@ export class SuperClaudeTasksServer {
           },
         },
 
+        // Advanced Feature Tools
+        {
+          name: 'generate_ai_tasks',
+          description: 'Generate tasks using AI providers based on requirements',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              requirements: { type: 'string', description: 'Task requirements or description' },
+              context: { type: 'string', description: 'Additional context information' },
+              provider: { 
+                type: 'string', 
+                enum: ['openai', 'anthropic', 'google'],
+                description: 'AI provider to use (optional, will auto-select if not specified)'
+              },
+              maxTasks: { type: 'number', description: 'Maximum number of tasks to generate', default: 5 },
+              targetComplexity: {
+                type: 'string',
+                enum: ['simple', 'moderate', 'complex', 'very_complex'],
+                description: 'Target complexity for generated tasks'
+              }
+            },
+            required: ['requirements']
+          }
+        },
+        {
+          name: 'analyze_task_with_ai',
+          description: 'Analyze task using AI for insights and recommendations',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string', description: 'Task ID to analyze' },
+              analysisType: {
+                type: 'string',
+                enum: ['complexity', 'dependencies', 'risks', 'estimation', 'breakdown'],
+                description: 'Type of analysis to perform'
+              },
+              provider: {
+                type: 'string',
+                enum: ['openai', 'anthropic', 'google'],
+                description: 'AI provider to use (optional)'
+              }
+            },
+            required: ['taskId', 'analysisType']
+          }
+        },
+        {
+          name: 'generate_schedule',
+          description: 'Generate optimized schedule for tasks using advanced algorithms',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              queueId: { type: 'string', description: 'Queue ID to schedule (optional, defaults to all queues)' },
+              algorithm: {
+                type: 'string',
+                enum: ['priority', 'deadline', 'critical_path', 'resource_aware', 'hybrid'],
+                description: 'Scheduling algorithm to use'
+              },
+              resourceConstraints: {
+                type: 'object',
+                properties: {
+                  maxConcurrentTasks: { type: 'number' },
+                  availableHours: { type: 'number' },
+                  skillRequirements: { type: 'array', items: { type: 'string' } }
+                }
+              },
+              timeframe: {
+                type: 'object',
+                properties: {
+                  startDate: { type: 'string', format: 'date-time' },
+                  endDate: { type: 'string', format: 'date-time' }
+                }
+              }
+            }
+          }
+        },
+        {
+          name: 'predict_task_duration',
+          description: 'Predict task duration using machine learning',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string', description: 'Task ID to predict duration for' },
+              features: {
+                type: 'object',
+                description: 'Additional features for prediction (optional)'
+              }
+            },
+            required: ['taskId']
+          }
+        },
+        {
+          name: 'get_analytics_metrics',
+          description: 'Get comprehensive analytics metrics for tasks and performance',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              timeWindow: {
+                type: 'string',
+                enum: ['hour', 'day', 'week', 'month', 'quarter', 'year'],
+                description: 'Time window for metrics calculation'
+              },
+              metricTypes: {
+                type: 'array',
+                items: {
+                  type: 'string',
+                  enum: ['performance', 'productivity', 'quality', 'resource_utilization', 'bottleneck', 'trend']
+                },
+                description: 'Types of metrics to calculate'
+              },
+              queueId: { type: 'string', description: 'Queue ID to analyze (optional)' }
+            }
+          }
+        },
+        {
+          name: 'detect_bottlenecks',
+          description: 'Detect bottlenecks in task workflow and processes',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              scope: {
+                type: 'string',
+                enum: ['queue', 'project', 'team', 'system'],
+                description: 'Scope of bottleneck detection'
+              },
+              queueId: { type: 'string', description: 'Queue ID to analyze (optional)' }
+            }
+          }
+        },
+        {
+          name: 'analyze_code_for_tasks',
+          description: 'Analyze code files to generate relevant tasks using LSP integration',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              filePaths: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Array of file paths to analyze'
+              },
+              language: {
+                type: 'string',
+                enum: ['typescript', 'javascript', 'python', 'java', 'go', 'rust', 'cpp', 'csharp', 'php', 'ruby'],
+                description: 'Programming language (optional, will auto-detect)'
+              },
+              analysisDepth: {
+                type: 'string',
+                enum: ['surface', 'moderate', 'deep'],
+                description: 'Depth of code analysis',
+                default: 'moderate'
+              }
+            },
+            required: ['filePaths']
+          }
+        },
+        {
+          name: 'get_code_impact_analysis',
+          description: 'Analyze impact of code changes on existing tasks',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              filePaths: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Array of changed file paths'
+              },
+              changeType: {
+                type: 'string',
+                enum: ['added', 'modified', 'deleted', 'renamed'],
+                description: 'Type of change'
+              }
+            },
+            required: ['filePaths', 'changeType']
+          }
+        },
+
         // Analytics Tools
         {
           name: 'get_task_statistics',
@@ -425,6 +726,24 @@ export class SuperClaudeTasksServer {
         case 'get_next_executable_tasks':
           return await this.handleGetNextExecutableTasks(args);
 
+        // Advanced Features
+        case 'generate_ai_tasks':
+          return await this.handleGenerateAITasks(args);
+        case 'analyze_task_with_ai':
+          return await this.handleAnalyzeTaskWithAI(args);
+        case 'generate_schedule':
+          return await this.handleGenerateSchedule(args);
+        case 'predict_task_duration':
+          return await this.handlePredictTaskDuration(args);
+        case 'get_analytics_metrics':
+          return await this.handleGetAnalyticsMetrics(args);
+        case 'detect_bottlenecks':
+          return await this.handleDetectBottlenecks(args);
+        case 'analyze_code_for_tasks':
+          return await this.handleAnalyzeCodeForTasks(args);
+        case 'get_code_impact_analysis':
+          return await this.handleGetCodeImpactAnalysis(args);
+
         // Analytics
         case 'get_task_statistics':
           return await this.handleGetTaskStatistics(args);
@@ -465,6 +784,9 @@ export class SuperClaudeTasksServer {
 
     const task = await this.taskQueue.createTask(input, args.queueId);
     
+    // Emit event for integrations
+    await this.eventManager.emitEvent('task.created', { task });
+    
     return {
       success: true,
       data: task,
@@ -490,6 +812,14 @@ export class SuperClaudeTasksServer {
 
     const task = await this.taskQueue.updateTask(update);
     
+    // Emit event for integrations
+    await this.eventManager.emitEvent('task.updated', { task });
+    
+    // Check if task was completed for learning engine
+    if (task.state === TaskState.COMPLETED) {
+      await this.eventManager.emitEvent('task.completed', { task });
+    }
+    
     return {
       success: true,
       data: task,
@@ -499,6 +829,9 @@ export class SuperClaudeTasksServer {
 
   private async handleDeleteTask(args: any): Promise<MCPToolResult> {
     await this.taskQueue.deleteTask(args.taskId);
+    
+    // Emit event for integrations
+    await this.eventManager.emitEvent('task.deleted', { taskId: args.taskId });
     
     return {
       success: true,
@@ -784,6 +1117,328 @@ export class SuperClaudeTasksServer {
     };
   }
 
+  // ==================== ADVANCED FEATURE HANDLERS ====================
+
+  private async handleGenerateAITasks(args: any): Promise<MCPToolResult> {
+    if (!this.config.enableAI) {
+      return {
+        success: false,
+        error: 'AI features are disabled',
+        metadata: { operation: 'generate_ai_tasks' }
+      };
+    }
+
+    const request: TaskGenerationRequest = {
+      requirements: args.requirements,
+      context: args.context,
+      maxTasks: args.maxTasks || 5,
+      targetComplexity: args.targetComplexity,
+      provider: args.provider
+    };
+
+    const response = await this.providerManager.generateTasks(request);
+    
+    // Create tasks in queue
+    const createdTasks: Task[] = [];
+    for (const taskData of response.tasks) {
+      const created = await this.taskQueue.createTask(taskData);
+      createdTasks.push(created);
+    }
+
+    return {
+      success: true,
+      data: {
+        tasks: createdTasks,
+        provider: response.provider,
+        confidence: response.confidence,
+        processingTime: response.processingTime
+      },
+      metadata: { 
+        operation: 'generate_ai_tasks',
+        taskCount: createdTasks.length,
+        provider: response.provider
+      }
+    };
+  }
+
+  private async handleAnalyzeTaskWithAI(args: any): Promise<MCPToolResult> {
+    if (!this.config.enableAI) {
+      return {
+        success: false,
+        error: 'AI features are disabled',
+        metadata: { operation: 'analyze_task_with_ai' }
+      };
+    }
+
+    const task = await this.taskQueue.getTask(args.taskId);
+    
+    const request: TaskAnalysisRequest = {
+      task,
+      analysisType: args.analysisType,
+      provider: args.provider
+    };
+
+    const response = await this.providerManager.analyzeTask(request);
+
+    return {
+      success: true,
+      data: response,
+      metadata: { 
+        operation: 'analyze_task_with_ai',
+        taskId: args.taskId,
+        analysisType: args.analysisType,
+        provider: response.provider
+      }
+    };
+  }
+
+  private async handleGenerateSchedule(args: any): Promise<MCPToolResult> {
+    if (!this.config.enableScheduling) {
+      return {
+        success: false,
+        error: 'Scheduling features are disabled',
+        metadata: { operation: 'generate_schedule' }
+      };
+    }
+
+    // Get tasks to schedule
+    let tasks: Task[];
+    if (args.queueId) {
+      tasks = await this.taskQueue.listTasks({ queueId: args.queueId });
+    } else {
+      tasks = await this.taskQueue.listTasks({});
+    }
+
+    const config: ScheduleConfig = {
+      algorithm: args.algorithm || SchedulingAlgorithm.HYBRID,
+      resourceConstraints: args.resourceConstraints,
+      timeframe: args.timeframe ? {
+        startDate: new Date(args.timeframe.startDate),
+        endDate: new Date(args.timeframe.endDate)
+      } : undefined
+    };
+
+    const scheduleResult = await this.schedulingEngine.generateSchedule(tasks, config);
+
+    return {
+      success: true,
+      data: scheduleResult,
+      metadata: { 
+        operation: 'generate_schedule',
+        algorithm: config.algorithm,
+        taskCount: tasks.length,
+        scheduleId: scheduleResult.scheduleId
+      }
+    };
+  }
+
+  private async handlePredictTaskDuration(args: any): Promise<MCPToolResult> {
+    if (!this.config.enableLearning) {
+      return {
+        success: false,
+        error: 'Learning features are disabled',
+        metadata: { operation: 'predict_task_duration' }
+      };
+    }
+
+    const task = await this.taskQueue.getTask(args.taskId);
+    
+    const features = args.features || {
+      complexity: task.complexity,
+      priority: task.priority,
+      descriptionLength: task.description?.length || 0,
+      dependencyCount: task.dependencies?.length || 0,
+      tagCount: task.tags?.length || 0
+    };
+
+    const request: PredictionRequest = {
+      features,
+      targetVariable: 'duration'
+    };
+
+    const prediction = await this.learningEngine.predict(request);
+
+    return {
+      success: true,
+      data: {
+        taskId: args.taskId,
+        prediction: prediction.value,
+        confidence: prediction.confidence,
+        algorithm: prediction.algorithm,
+        features: prediction.features
+      },
+      metadata: { 
+        operation: 'predict_task_duration',
+        taskId: args.taskId,
+        algorithm: prediction.algorithm
+      }
+    };
+  }
+
+  private async handleGetAnalyticsMetrics(args: any): Promise<MCPToolResult> {
+    if (!this.config.enableAnalytics) {
+      return {
+        success: false,
+        error: 'Analytics features are disabled',
+        metadata: { operation: 'get_analytics_metrics' }
+      };
+    }
+
+    const timeWindow = args.timeWindow || TimeWindow.DAY;
+    const metricTypes = args.metricTypes || [MetricType.PERFORMANCE, MetricType.PRODUCTIVITY];
+
+    const metrics = await this.analyticsEngine.calculateMetrics(timeWindow);
+    const filteredMetrics = metrics.filter(metric => metricTypes.includes(metric.type));
+
+    return {
+      success: true,
+      data: {
+        metrics: filteredMetrics,
+        timeWindow,
+        metricTypes
+      },
+      metadata: { 
+        operation: 'get_analytics_metrics',
+        timeWindow,
+        metricCount: filteredMetrics.length
+      }
+    };
+  }
+
+  private async handleDetectBottlenecks(args: any): Promise<MCPToolResult> {
+    if (!this.config.enableAnalytics) {
+      return {
+        success: false,
+        error: 'Analytics features are disabled',
+        metadata: { operation: 'detect_bottlenecks' }
+      };
+    }
+
+    const bottlenecks = await this.analyticsEngine.detectBottlenecks();
+    
+    // Filter by scope if specified
+    let filteredBottlenecks = bottlenecks;
+    if (args.scope) {
+      filteredBottlenecks = bottlenecks.filter(b => 
+        b.metadata?.scope === args.scope
+      );
+    }
+
+    return {
+      success: true,
+      data: {
+        bottlenecks: filteredBottlenecks,
+        scope: args.scope,
+        totalCount: bottlenecks.length,
+        filteredCount: filteredBottlenecks.length
+      },
+      metadata: { 
+        operation: 'detect_bottlenecks',
+        scope: args.scope,
+        bottleneckCount: filteredBottlenecks.length
+      }
+    };
+  }
+
+  private async handleAnalyzeCodeForTasks(args: any): Promise<MCPToolResult> {
+    if (!this.config.enableLSP) {
+      return {
+        success: false,
+        error: 'LSP features are disabled',
+        metadata: { operation: 'analyze_code_for_tasks' }
+      };
+    }
+
+    const recommendations = await this.lspIntegration.generateCodeTasks(
+      args.filePaths,
+      { 
+        projectType: args.language,
+        constraints: args.analysisDepth ? [args.analysisDepth] : undefined
+      }
+    );
+
+    // Create tasks in queue based on recommendations
+    const createdTasks: Task[] = [];
+    for (const recommendation of recommendations) {
+      const taskInput: CreateTaskInput = {
+        title: recommendation.title,
+        description: recommendation.description,
+        state: TaskState.PENDING,
+        priority: recommendation.priority,
+        complexity: recommendation.complexity,
+        estimatedHours: recommendation.estimatedHours,
+        tags: ['code-analysis', 'auto-generated'],
+        dependencies: []
+      };
+      
+      const created = await this.taskQueue.createTask(taskInput);
+      createdTasks.push(created);
+    }
+
+    return {
+      success: true,
+      data: {
+        recommendations,
+        createdTasks,
+        analyzedFiles: args.filePaths
+      },
+      metadata: { 
+        operation: 'analyze_code_for_tasks',
+        fileCount: args.filePaths.length,
+        taskCount: createdTasks.length,
+        language: args.language
+      }
+    };
+  }
+
+  private async handleGetCodeImpactAnalysis(args: any): Promise<MCPToolResult> {
+    if (!this.config.enableLSP) {
+      return {
+        success: false,
+        error: 'LSP features are disabled',
+        metadata: { operation: 'get_code_impact_analysis' }
+      };
+    }
+
+    // Analyze each file to get its current state
+    const analyses = [];
+    for (const filePath of args.filePaths) {
+      try {
+        const analysis = await this.lspIntegration.analyzeCodeFile(filePath);
+        analyses.push(analysis);
+      } catch (error) {
+        // Continue with other files if one fails
+        console.warn(`Failed to analyze ${filePath}:`, error.message);
+      }
+    }
+
+    // Create a basic impact analysis based on the code analyses
+    const impactAnalysis = {
+      id: uuidv4(),
+      changedFiles: args.filePaths,
+      changeType: args.changeType,
+      analyses,
+      potentialImpacts: analyses.map(analysis => ({
+        file: analysis.file,
+        complexity: analysis.complexity.cyclomaticComplexity,
+        dependencies: analysis.dependencies.length,
+        issues: analysis.issues.length
+      })),
+      analyzedAt: new Date()
+    };
+
+    return {
+      success: true,
+      data: impactAnalysis,
+      metadata: { 
+        operation: 'get_code_impact_analysis',
+        fileCount: args.filePaths.length,
+        changeType: args.changeType,
+        analyzedFileCount: analyses.length
+      }
+    };
+  }
+
   // ==================== ERROR HANDLING ====================
 
   private setupErrorHandling(): void {
@@ -827,11 +1482,74 @@ export class SuperClaudeTasksServer {
   }
 
   /**
+   * Initialize all components
+   */
+  async initialize(): Promise<void> {
+    // Initialize database connection if persistence is enabled
+    if (this.databaseManager) {
+      await this.databaseManager.initialize();
+    }
+
+    // Initialize other components as needed
+    await this.eventManager.initialize?.();
+    await this.providerManager.initialize?.();
+    await this.schedulingEngine.initialize?.();
+    await this.learningEngine.initialize?.();
+    await this.analyticsEngine.initialize?.();
+    await this.lspIntegration.initialize?.();
+  }
+
+  /**
+   * Cleanup resources
+   */
+  async cleanup(): Promise<void> {
+    // Cleanup database connection
+    if (this.databaseManager) {
+      await this.databaseManager.cleanup?.();
+    }
+
+    // Cleanup other components
+    await this.eventManager.cleanup?.();
+    await this.providerManager.cleanup?.();
+    await this.schedulingEngine.cleanup?.();
+    await this.learningEngine.cleanup?.();
+    await this.analyticsEngine.cleanup?.();
+    await this.lspIntegration.cleanup?.();
+
+    // Cleanup core components
+    await this.taskQueue.cleanup();
+  }
+
+  /**
    * Start the MCP server
    */
   async start(): Promise<void> {
+    // Initialize all components first
+    await this.initialize();
+
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error('SuperClaude Tasks MCP server running on stdio');
+    console.error('SuperClaude Tasks MCP server v2.0.0 running on stdio');
+    console.error('Features enabled:', {
+      persistence: this.config.enablePersistence,
+      analytics: this.config.enableAnalytics,
+      scheduling: this.config.enableScheduling,
+      learning: this.config.enableLearning,
+      lsp: this.config.enableLSP,
+      ai: this.config.enableAI
+    });
+
+    // Setup graceful shutdown
+    process.on('SIGINT', async () => {
+      console.error('Received SIGINT, shutting down gracefully...');
+      await this.cleanup();
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', async () => {
+      console.error('Received SIGTERM, shutting down gracefully...');
+      await this.cleanup();
+      process.exit(0);
+    });
   }
 }

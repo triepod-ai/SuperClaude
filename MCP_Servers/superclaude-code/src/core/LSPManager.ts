@@ -23,31 +23,46 @@ import {
   LSPError
 } from '../types/index.js';
 
+// Import concurrency utilities from orchestrator
+import { AsyncMutex, AtomicCounter, ThreadSafeMap, AtomicBoolean } from '../../superclaude-orchestrator/src/utils/concurrency.js';
+
 /**
  * Language Server Protocol integration manager
- * Inspired by Serena patterns for semantic code analysis
+ * Thread-safe with proper synchronization for document operations
  */
 export class LSPManager extends EventEmitter {
-  private servers: Map<SupportedLanguage, LSPServer>;
-  private documents: Map<string, TextDocument>;
-  private serverConfigs: Map<SupportedLanguage, LSPServerConfig>;
+  private servers: ThreadSafeMap<SupportedLanguage, LSPServer>;
+  private documents: ThreadSafeMap<string, TextDocument>;
+  private serverConfigs: ThreadSafeMap<SupportedLanguage, LSPServerConfig>;
+  private documentMutex: AsyncMutex;
+  private serverMutex: AsyncMutex;
+  private analysisMutex: AsyncMutex;
+  private cleanupMutex: AsyncMutex;
+  private activeOperations: AtomicCounter;
+  private isShuttingDown: AtomicBoolean;
 
   constructor() {
     super();
-    this.servers = new Map();
-    this.documents = new Map();
-    this.serverConfigs = new Map();
+    this.servers = new ThreadSafeMap();
+    this.documents = new ThreadSafeMap();
+    this.serverConfigs = new ThreadSafeMap();
+    this.documentMutex = new AsyncMutex();
+    this.serverMutex = new AsyncMutex();
+    this.analysisMutex = new AsyncMutex();
+    this.cleanupMutex = new AsyncMutex();
+    this.activeOperations = new AtomicCounter();
+    this.isShuttingDown = new AtomicBoolean(false);
     
     this.initializeServerConfigs();
-    logger.info('LSPManager initialized');
+    logger.info('LSPManager initialized with thread safety');
   }
 
   /**
-   * Initialize LSP server configurations
+   * Initialize LSP server configurations with thread safety
    */
-  private initializeServerConfigs(): void {
+  private async initializeServerConfigs(): Promise<void> {
     // TypeScript/JavaScript server
-    this.serverConfigs.set('typescript', {
+    await this.serverConfigs.set('typescript', {
       command: 'typescript-language-server',
       args: ['--stdio'],
       capabilities: [
@@ -67,7 +82,7 @@ export class LSPManager extends EventEmitter {
       }
     });
 
-    this.serverConfigs.set('javascript', {
+    await this.serverConfigs.set('javascript', {
       command: 'typescript-language-server',
       args: ['--stdio'],
       capabilities: [
@@ -85,7 +100,7 @@ export class LSPManager extends EventEmitter {
     });
 
     // Python server (Pylsp)
-    this.serverConfigs.set('python', {
+    await this.serverConfigs.set('python', {
       command: 'pylsp',
       args: [],
       capabilities: [
@@ -110,7 +125,7 @@ export class LSPManager extends EventEmitter {
     });
 
     // Rust server (rust-analyzer)
-    this.serverConfigs.set('rust', {
+    await this.serverConfigs.set('rust', {
       command: 'rust-analyzer',
       args: [],
       capabilities: [
@@ -130,7 +145,7 @@ export class LSPManager extends EventEmitter {
     });
 
     // Go server (gopls)
-    this.serverConfigs.set('go', {
+    await this.serverConfigs.set('go', {
       command: 'gopls',
       args: [],
       capabilities: [
@@ -150,26 +165,34 @@ export class LSPManager extends EventEmitter {
   }
 
   /**
-   * Start LSP server for language
+   * Start LSP server for language with thread safety
    */
   async startServer(language: SupportedLanguage, workspaceRoot: string): Promise<void> {
-    if (this.servers.has(language)) {
-      logger.warn('LSP server already running', { language });
-      return;
+    if (this.isShuttingDown.get()) {
+      throw new LSPError('LSPManager is shutting down', language);
     }
 
-    const config = this.serverConfigs.get(language);
-    if (!config) {
-      throw new LSPError(`No LSP server configuration for language: ${language}`, language);
-    }
-
+    const serverRelease = await this.serverMutex.acquire();
+    await this.activeOperations.increment();
+    
     try {
+      const existingServer = await this.servers.get(language);
+      if (existingServer) {
+        logger.warn('LSP server already running', { language });
+        return;
+      }
+
+      const config = await this.serverConfigs.get(language);
+      if (!config) {
+        throw new LSPError(`No LSP server configuration for language: ${language}`, language);
+      }
+
       logger.info('Starting LSP server', { language, command: config.command });
 
       const server = new LSPServer(language, config, workspaceRoot);
       await server.start();
 
-      this.servers.set(language, server);
+      await this.servers.set(language, server);
 
       // Setup event handlers
       server.on('initialized', () => {
@@ -182,9 +205,9 @@ export class LSPManager extends EventEmitter {
         this.emit('server-error', language, error);
       });
 
-      server.on('disconnected', () => {
+      server.on('disconnected', async () => {
         logger.warn('LSP server disconnected', { language });
-        this.servers.delete(language);
+        await this.servers.delete(language);
         this.emit('server-disconnected', language);
       });
 
@@ -197,22 +220,27 @@ export class LSPManager extends EventEmitter {
         `Failed to start LSP server for ${language}: ${error instanceof Error ? error.message : 'Unknown error'}`,
         language
       );
+    } finally {
+      await this.activeOperations.decrement();
+      serverRelease();
     }
   }
 
   /**
-   * Stop LSP server for language
+   * Stop LSP server for language with thread safety
    */
   async stopServer(language: SupportedLanguage): Promise<void> {
-    const server = this.servers.get(language);
-    if (!server) {
-      logger.warn('No LSP server running for language', { language });
-      return;
-    }
-
+    const serverRelease = await this.serverMutex.acquire();
+    
     try {
+      const server = await this.servers.get(language);
+      if (!server) {
+        logger.warn('No LSP server running for language', { language });
+        return;
+      }
+
       await server.stop();
-      this.servers.delete(language);
+      await this.servers.delete(language);
       logger.info('LSP server stopped', { language });
     } catch (error) {
       logger.error('Error stopping LSP server', {
@@ -220,168 +248,246 @@ export class LSPManager extends EventEmitter {
         error: error instanceof Error ? error.message : 'Unknown error'
       });
       throw error;
+    } finally {
+      serverRelease();
     }
   }
 
   /**
-   * Open document in LSP server
+   * Open document in LSP server with thread safety
    */
   async openDocument(uri: string, languageId: string, content: string): Promise<void> {
-    const language = this.mapLanguageId(languageId);
-    const server = this.servers.get(language);
-    
-    if (!server) {
-      throw new LSPError(`No LSP server running for language: ${language}`, language);
+    if (this.isShuttingDown.get()) {
+      throw new LSPError('LSPManager is shutting down', this.mapLanguageId(languageId));
     }
 
-    // Create text document
-    const document = TextDocument.create(uri, languageId, 1, content);
-    this.documents.set(uri, document);
-
-    // Send to LSP server
-    await server.openDocument(document);
+    const documentRelease = await this.documentMutex.acquire();
+    await this.activeOperations.increment();
     
-    logger.debug('Document opened', { uri, language });
+    try {
+      const language = this.mapLanguageId(languageId);
+      const server = await this.servers.get(language);
+      
+      if (!server) {
+        throw new LSPError(`No LSP server running for language: ${language}`, language);
+      }
+
+      // Check if document already exists
+      const existingDocument = await this.documents.get(uri);
+      if (existingDocument) {
+        logger.warn('Document already open, updating content', { uri, language });
+        await this.updateDocument(uri, content);
+        return;
+      }
+
+      // Create text document
+      const document = TextDocument.create(uri, languageId, 1, content);
+      await this.documents.set(uri, document);
+
+      // Send to LSP server
+      await server.openDocument(document);
+      
+      logger.debug('Document opened', { uri, language });
+      this.emit('document-opened', { uri, language });
+      
+    } catch (error) {
+      logger.error('Failed to open document', {
+        uri,
+        languageId,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      throw error;
+    } finally {
+      await this.activeOperations.decrement();
+      documentRelease();
+    }
   }
 
   /**
-   * Update document content
+   * Update document content with thread safety
    */
   async updateDocument(uri: string, content: string, version?: number): Promise<void> {
-    const document = this.documents.get(uri);
-    if (!document) {
-      throw new Error(`Document not found: ${uri}`);
-    }
-
-    const language = this.mapLanguageId(document.languageId);
-    const server = this.servers.get(language);
+    const documentRelease = await this.documentMutex.acquire();
+    await this.activeOperations.increment();
     
-    if (!server) {
-      throw new LSPError(`No LSP server running for language: ${language}`, language);
-    }
-
-    // Update document
-    const updatedDocument = TextDocument.update(document, [
-      {
-        range: {
-          start: { line: 0, character: 0 },
-          end: { line: document.lineCount, character: 0 }
-        },
-        text: content
+    try {
+      const document = await this.documents.get(uri);
+      if (!document) {
+        throw new Error(`Document not found: ${uri}`);
       }
-    ], version || document.version + 1);
 
-    this.documents.set(uri, updatedDocument);
+      const language = this.mapLanguageId(document.languageId);
+      const server = await this.servers.get(language);
+      
+      if (!server) {
+        throw new LSPError(`No LSP server running for language: ${language}`, language);
+      }
 
-    // Send to LSP server
-    await server.updateDocument(updatedDocument, content);
-    
-    logger.debug('Document updated', { uri, version: updatedDocument.version });
+      // Update document atomically
+      const updatedDocument = TextDocument.update(document, [
+        {
+          range: {
+            start: { line: 0, character: 0 },
+            end: { line: document.lineCount, character: 0 }
+          },
+          text: content
+        }
+      ], version || document.version + 1);
+
+      await this.documents.set(uri, updatedDocument);
+
+      // Send to LSP server
+      await server.updateDocument(updatedDocument, content);
+      
+      logger.debug('Document updated', { uri, version: updatedDocument.version });
+      this.emit('document-updated', { uri, version: updatedDocument.version });
+      
+    } catch (error) {
+      logger.error('Failed to update document', {
+        uri,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      throw error;
+    } finally {
+      await this.activeOperations.decrement();
+      documentRelease();
+    }
   }
 
   /**
-   * Close document
+   * Close document with thread safety
    */
   async closeDocument(uri: string): Promise<void> {
-    const document = this.documents.get(uri);
-    if (!document) {
-      logger.warn('Document not found for closing', { uri });
-      return;
-    }
-
-    const language = this.mapLanguageId(document.languageId);
-    const server = this.servers.get(language);
+    const documentRelease = await this.documentMutex.acquire();
     
-    if (server) {
-      await server.closeDocument(document);
-    }
+    try {
+      const document = await this.documents.get(uri);
+      if (!document) {
+        logger.warn('Document not found for closing', { uri });
+        return;
+      }
 
-    this.documents.delete(uri);
-    logger.debug('Document closed', { uri });
+      const language = this.mapLanguageId(document.languageId);
+      const server = await this.servers.get(language);
+      
+      if (server) {
+        await server.closeDocument(document);
+      }
+
+      await this.documents.delete(uri);
+      logger.debug('Document closed', { uri });
+      this.emit('document-closed', { uri });
+      
+    } catch (error) {
+      logger.error('Failed to close document', {
+        uri,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      throw error;
+    } finally {
+      documentRelease();
+    }
   }
 
   /**
-   * Get document symbols
+   * Get document symbols with thread safety
    */
   async getDocumentSymbols(uri: string): Promise<SymbolInfo[]> {
-    const document = this.documents.get(uri);
-    if (!document) {
-      throw new Error(`Document not found: ${uri}`);
-    }
-
-    const language = this.mapLanguageId(document.languageId);
-    const server = this.servers.get(language);
+    const analysisRelease = await this.analysisMutex.acquire();
+    await this.activeOperations.increment();
     
-    if (!server) {
-      throw new LSPError(`No LSP server running for language: ${language}`, language);
-    }
-
     try {
+      const document = await this.documents.get(uri);
+      if (!document) {
+        throw new Error(`Document not found: ${uri}`);
+      }
+
+      const language = this.mapLanguageId(document.languageId);
+      const server = await this.servers.get(language);
+      
+      if (!server) {
+        throw new LSPError(`No LSP server running for language: ${language}`, language);
+      }
+
       const symbols = await server.getDocumentSymbols(document);
       return this.convertLSPSymbols(symbols, uri);
+      
     } catch (error) {
       logger.error('Error getting document symbols', {
         uri,
         error: error instanceof Error ? error.message : 'Unknown error'
       });
       throw error;
+    } finally {
+      await this.activeOperations.decrement();
+      analysisRelease();
     }
   }
 
   /**
-   * Find references to symbol
+   * Find references to symbol with thread safety
    */
   async findReferences(uri: string, line: number, character: number): Promise<SymbolInfo[]> {
-    const document = this.documents.get(uri);
-    if (!document) {
-      throw new Error(`Document not found: ${uri}`);
-    }
-
-    const language = this.mapLanguageId(document.languageId);
-    const server = this.servers.get(language);
+    const analysisRelease = await this.analysisMutex.acquire();
+    await this.activeOperations.increment();
     
-    if (!server) {
-      throw new LSPError(`No LSP server running for language: ${language}`, language);
-    }
-
     try {
+      const document = await this.documents.get(uri);
+      if (!document) {
+        throw new Error(`Document not found: ${uri}`);
+      }
+
+      const language = this.mapLanguageId(document.languageId);
+      const server = await this.servers.get(language);
+      
+      if (!server) {
+        throw new LSPError(`No LSP server running for language: ${language}`, language);
+      }
+
       const references = await server.findReferences(document, line, character);
       return this.convertLSPReferences(references);
+      
     } catch (error) {
       logger.error('Error finding references', {
         uri, line, character,
         error: error instanceof Error ? error.message : 'Unknown error'
       });
       throw error;
+    } finally {
+      await this.activeOperations.decrement();
+      analysisRelease();
     }
   }
 
   /**
-   * Get semantic analysis
+   * Get semantic analysis with comprehensive thread safety
    */
   async getSemanticAnalysis(uri: string): Promise<SemanticAnalysisResult> {
-    const document = this.documents.get(uri);
-    if (!document) {
-      throw new Error(`Document not found: ${uri}`);
-    }
-
-    const language = this.mapLanguageId(document.languageId);
-    const server = this.servers.get(language);
+    const analysisRelease = await this.analysisMutex.acquire();
+    await this.activeOperations.increment();
     
-    if (!server) {
-      throw new LSPError(`No LSP server running for language: ${language}`, language);
-    }
-
     try {
+      const document = await this.documents.get(uri);
+      if (!document) {
+        throw new Error(`Document not found: ${uri}`);
+      }
+
+      const language = this.mapLanguageId(document.languageId);
+      const server = await this.servers.get(language);
+      
+      if (!server) {
+        throw new LSPError(`No LSP server running for language: ${language}`, language);
+      }
+
       const startTime = Date.now();
       
-      // Get symbols and references
+      // Get symbols and references in parallel for better performance
       const [symbols, semanticTokens] = await Promise.all([
         server.getDocumentSymbols(document),
-        server.getSemanticTokens?.(document) || []
+        server.getSemanticTokens?.(document) || Promise.resolve([])
       ]);
 
-      // Build symbol table
+      // Build symbol table atomically
       const symbolTable: Record<string, SymbolInfo> = {};
       const convertedSymbols = this.convertLSPSymbols(symbols, uri);
       
@@ -389,10 +495,10 @@ export class LSPManager extends EventEmitter {
         symbolTable[symbol.id] = symbol;
       }
 
-      // Build cross-references (simplified)
+      // Build cross-references (simplified but thread-safe)
       const crossReferences = await this.buildCrossReferences(convertedSymbols, document, server);
 
-      // Build scopes (simplified)
+      // Build scopes
       const scopes = this.buildScopes(convertedSymbols);
 
       const analysisTime = Date.now() - startTime;
@@ -412,17 +518,21 @@ export class LSPManager extends EventEmitter {
         error: error instanceof Error ? error.message : 'Unknown error'
       });
       throw error;
+    } finally {
+      await this.activeOperations.decrement();
+      analysisRelease();
     }
   }
 
   /**
-   * Get server status
+   * Get server status with thread safety
    */
-  getServerStatus(): LSPServerInfo[] {
+  async getServerStatus(): Promise<LSPServerInfo[]> {
     const status: LSPServerInfo[] = [];
+    const configEntries = await this.serverConfigs.entries();
 
-    for (const [language, config] of this.serverConfigs.entries()) {
-      const server = this.servers.get(language);
+    for (const [language, config] of configEntries) {
+      const server = await this.servers.get(language);
       const info: LSPServerInfo = {
         language,
         name: config.command,
@@ -435,6 +545,23 @@ export class LSPManager extends EventEmitter {
     }
 
     return status;
+  }
+
+  /**
+   * Get manager statistics
+   */
+  getManagerStats(): {
+    activeServers: number;
+    openDocuments: number;
+    activeOperations: number;
+    isShuttingDown: boolean;
+  } {
+    return {
+      activeServers: this.servers.size,
+      openDocuments: this.documents.size,
+      activeOperations: this.activeOperations.get(),
+      isShuttingDown: this.isShuttingDown.get()
+    };
   }
 
   // ==================== HELPER METHODS ====================
@@ -524,7 +651,7 @@ export class LSPManager extends EventEmitter {
   }
 
   /**
-   * Build cross-references
+   * Build cross-references with thread safety
    */
   private async buildCrossReferences(symbols: SymbolInfo[], document: TextDocument, server: LSPServer): Promise<any[]> {
     // Simplified implementation - would be more comprehensive in production
@@ -548,7 +675,11 @@ export class LSPManager extends EventEmitter {
             });
           }
         } catch (error) {
-          // Continue on error
+          // Continue on error to prevent blocking analysis
+          logger.debug('Failed to find references for symbol', {
+            symbolId: symbol.id,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
         }
       }
     }
@@ -633,18 +764,46 @@ export class LSPManager extends EventEmitter {
   }
 
   /**
-   * Cleanup resources
+   * Cleanup resources with proper synchronization
    */
   async cleanup(): Promise<void> {
+    // Mark as shutting down
+    await this.isShuttingDown.set(true);
+    
+    const cleanupRelease = await this.cleanupMutex.acquire();
     try {
+      logger.info('Starting LSPManager cleanup', {
+        activeServers: this.servers.size,
+        openDocuments: this.documents.size,
+        activeOperations: this.activeOperations.get()
+      });
+      
+      // Wait for active operations to complete (with timeout)
+      const maxWaitTime = 30000; // 30 seconds
+      const startTime = Date.now();
+      
+      while (this.activeOperations.get() > 0 && (Date.now() - startTime) < maxWaitTime) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      if (this.activeOperations.get() > 0) {
+        logger.warn('Forcing cleanup with active operations', {
+          remainingOperations: this.activeOperations.get()
+        });
+      }
+      
       // Stop all servers
-      const stopPromises = Array.from(this.servers.keys()).map(language => 
-        this.stopServer(language)
+      const serverLanguages = await this.servers.keys();
+      const stopPromises = serverLanguages.map(language => 
+        this.stopServer(language).catch(error => 
+          logger.warn('Failed to stop server during cleanup', { language, error })
+        )
       );
-      await Promise.all(stopPromises);
+      await Promise.allSettled(stopPromises);
 
       // Clear documents
-      this.documents.clear();
+      await this.documents.clear();
+      await this.activeOperations.reset();
 
       logger.info('LSPManager cleanup completed');
 
@@ -653,7 +812,32 @@ export class LSPManager extends EventEmitter {
         error: error instanceof Error ? error.message : 'Unknown error'
       });
       throw error;
+    } finally {
+      cleanupRelease();
     }
+  }
+
+  /**
+   * Graceful shutdown - wait for active operations to complete
+   */
+  async gracefulShutdown(timeoutMs = 30000): Promise<void> {
+    await this.isShuttingDown.set(true);
+    
+    const startTime = Date.now();
+    
+    // Wait for active operations to complete
+    while (this.activeOperations.get() > 0 && (Date.now() - startTime) < timeoutMs) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    // Force cleanup if timeout exceeded
+    if (this.activeOperations.get() > 0) {
+      logger.warn('Graceful shutdown timeout exceeded, forcing cleanup', {
+        remainingOperations: this.activeOperations.get()
+      });
+    }
+    
+    await this.cleanup();
   }
 }
 
@@ -662,9 +846,11 @@ export class LSPManager extends EventEmitter {
 class LSPServer extends EventEmitter {
   private process?: ChildProcess;
   private connection: any;
-  private isInitialized = false;
-  private lastActivity = new Date();
-  private errorCount = 0;
+  private isInitialized = new AtomicBoolean(false);
+  private lastActivity: Date = new Date();
+  private errorCount: AtomicCounter = new AtomicCounter();
+  private connectionMutex: AsyncMutex = new AsyncMutex();
+  private requestMutex: AsyncMutex = new AsyncMutex();
 
   constructor(
     private language: SupportedLanguage,
@@ -675,6 +861,8 @@ class LSPServer extends EventEmitter {
   }
 
   async start(): Promise<void> {
+    const connectionRelease = await this.connectionMutex.acquire();
+    
     try {
       // Spawn LSP server process
       this.process = spawn(this.config.command, this.config.args, {
@@ -694,7 +882,7 @@ class LSPServer extends EventEmitter {
 
       // Setup error handling
       this.process.on('error', (error) => {
-        this.errorCount++;
+        this.errorCount.increment();
         this.emit('error', error);
       });
 
@@ -709,8 +897,10 @@ class LSPServer extends EventEmitter {
       this.emit('initialized');
 
     } catch (error) {
-      this.errorCount++;
+      await this.errorCount.increment();
       throw error;
+    } finally {
+      connectionRelease();
     }
   }
 
@@ -775,111 +965,147 @@ class LSPServer extends EventEmitter {
     await this.connection.sendRequest('initialize', initParams);
     await this.connection.sendNotification('initialized', {});
 
-    this.isInitialized = true;
+    await this.isInitialized.set(true);
     this.lastActivity = new Date();
   }
 
   async openDocument(document: TextDocument): Promise<void> {
-    if (!this.isInitialized) {
+    if (!this.isInitialized.get()) {
       throw new Error('LSP server not initialized');
     }
 
-    await this.connection.sendNotification('textDocument/didOpen', {
-      textDocument: {
-        uri: document.uri,
-        languageId: document.languageId,
-        version: document.version,
-        text: document.getText()
-      }
-    });
+    const requestRelease = await this.requestMutex.acquire();
+    
+    try {
+      await this.connection.sendNotification('textDocument/didOpen', {
+        textDocument: {
+          uri: document.uri,
+          languageId: document.languageId,
+          version: document.version,
+          text: document.getText()
+        }
+      });
 
-    this.lastActivity = new Date();
+      this.lastActivity = new Date();
+    } finally {
+      requestRelease();
+    }
   }
 
   async updateDocument(document: TextDocument, content: string): Promise<void> {
-    if (!this.isInitialized) {
+    if (!this.isInitialized.get()) {
       throw new Error('LSP server not initialized');
     }
 
-    await this.connection.sendNotification('textDocument/didChange', {
-      textDocument: {
-        uri: document.uri,
-        version: document.version
-      },
-      contentChanges: [{
-        text: content
-      }]
-    });
+    const requestRelease = await this.requestMutex.acquire();
+    
+    try {
+      await this.connection.sendNotification('textDocument/didChange', {
+        textDocument: {
+          uri: document.uri,
+          version: document.version
+        },
+        contentChanges: [{
+          text: content
+        }]
+      });
 
-    this.lastActivity = new Date();
+      this.lastActivity = new Date();
+    } finally {
+      requestRelease();
+    }
   }
 
   async closeDocument(document: TextDocument): Promise<void> {
-    if (!this.isInitialized) {
+    if (!this.isInitialized.get()) {
       return;
     }
 
-    await this.connection.sendNotification('textDocument/didClose', {
-      textDocument: {
-        uri: document.uri
-      }
-    });
-
-    this.lastActivity = new Date();
-  }
-
-  async getDocumentSymbols(document: TextDocument): Promise<any[]> {
-    if (!this.isInitialized) {
-      throw new Error('LSP server not initialized');
-    }
-
-    const result = await this.connection.sendRequest('textDocument/documentSymbol', {
-      textDocument: {
-        uri: document.uri
-      }
-    });
-
-    this.lastActivity = new Date();
-    return result || [];
-  }
-
-  async findReferences(document: TextDocument, line: number, character: number): Promise<any[]> {
-    if (!this.isInitialized) {
-      throw new Error('LSP server not initialized');
-    }
-
-    const result = await this.connection.sendRequest('textDocument/references', {
-      textDocument: {
-        uri: document.uri
-      },
-      position: {
-        line,
-        character
-      },
-      context: {
-        includeDeclaration: true
-      }
-    });
-
-    this.lastActivity = new Date();
-    return result || [];
-  }
-
-  async getSemanticTokens?(document: TextDocument): Promise<any[]> {
-    // Optional semantic tokens support
-    if (!this.isInitialized) {
-      return [];
-    }
-
+    const requestRelease = await this.requestMutex.acquire();
+    
     try {
-      const result = await this.connection.sendRequest('textDocument/semanticTokens/full', {
+      await this.connection.sendNotification('textDocument/didClose', {
         textDocument: {
           uri: document.uri
         }
       });
 
       this.lastActivity = new Date();
-      return this.parseSemanticTokens(result);
+    } finally {
+      requestRelease();
+    }
+  }
+
+  async getDocumentSymbols(document: TextDocument): Promise<any[]> {
+    if (!this.isInitialized.get()) {
+      throw new Error('LSP server not initialized');
+    }
+
+    const requestRelease = await this.requestMutex.acquire();
+    
+    try {
+      const result = await this.connection.sendRequest('textDocument/documentSymbol', {
+        textDocument: {
+          uri: document.uri
+        }
+      });
+
+      this.lastActivity = new Date();
+      return result || [];
+    } finally {
+      requestRelease();
+    }
+  }
+
+  async findReferences(document: TextDocument, line: number, character: number): Promise<any[]> {
+    if (!this.isInitialized.get()) {
+      throw new Error('LSP server not initialized');
+    }
+
+    const requestRelease = await this.requestMutex.acquire();
+    
+    try {
+      const result = await this.connection.sendRequest('textDocument/references', {
+        textDocument: {
+          uri: document.uri
+        },
+        position: {
+          line,
+          character
+        },
+        context: {
+          includeDeclaration: true
+        }
+      });
+
+      this.lastActivity = new Date();
+      return result || [];
+    } finally {
+      requestRelease();
+    }
+  }
+
+  async getSemanticTokens?(document: TextDocument): Promise<any[]> {
+    // Optional semantic tokens support
+    if (!this.isInitialized.get()) {
+      return [];
+    }
+
+    try {
+      const requestRelease = await this.requestMutex.acquire();
+      
+      try {
+        const result = await this.connection.sendRequest('textDocument/semanticTokens/full', {
+          textDocument: {
+            uri: document.uri
+          }
+        });
+
+        this.lastActivity = new Date();
+        return this.parseSemanticTokens(result);
+      } finally {
+        requestRelease();
+      }
     } catch (error) {
       // Not all servers support semantic tokens
       return [];
@@ -954,8 +1180,10 @@ class LSPServer extends EventEmitter {
   }
 
   async stop(): Promise<void> {
+    const connectionRelease = await this.connectionMutex.acquire();
+    
     try {
-      if (this.connection && this.isInitialized) {
+      if (this.connection && this.isInitialized.get()) {
         await this.connection.sendRequest('shutdown', null);
         await this.connection.sendNotification('exit', null);
       }
@@ -964,11 +1192,15 @@ class LSPServer extends EventEmitter {
         this.process.kill();
       }
 
+      await this.isInitialized.set(false);
+
     } catch (error) {
       logger.error('Error stopping LSP server', {
         language: this.language,
         error: error instanceof Error ? error.message : 'Unknown error'
       });
+    } finally {
+      connectionRelease();
     }
   }
 
@@ -977,7 +1209,7 @@ class LSPServer extends EventEmitter {
   }
 
   getErrorCount(): number {
-    return this.errorCount;
+    return this.errorCount.get();
   }
 }
 

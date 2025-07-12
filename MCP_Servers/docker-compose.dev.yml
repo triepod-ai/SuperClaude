@@ -1,0 +1,171 @@
+version: '3.8'
+
+services:
+  # Development database (SQLite)
+  superclaude-tasks-dev:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: superclaude-tasks-dev
+    environment:
+      NODE_ENV: development
+      MCP_SERVER_PORT: 3001
+      CONFIG_PATH: /app/shared/config/development.json
+    ports:
+      - "3001:3001"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - dev_data:/app/data
+      - dev_logs:/var/log/superclaude
+    command: ["npm", "run", "dev", "--workspace=superclaude-tasks"]
+    restart: unless-stopped
+    networks:
+      - superclaude-dev-network
+
+  superclaude-orchestrator-dev:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: superclaude-orchestrator-dev
+    environment:
+      NODE_ENV: development
+      MCP_SERVER_PORT: 3002
+      CONFIG_PATH: /app/shared/config/development.json
+      TASKS_SERVER_HOST: superclaude-tasks-dev
+      TASKS_SERVER_PORT: 3001
+    ports:
+      - "3002:3002"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - dev_data:/app/data
+      - dev_logs:/var/log/superclaude
+    depends_on:
+      - superclaude-tasks-dev
+    command: ["npm", "run", "dev", "--workspace=superclaude-orchestrator"]
+    restart: unless-stopped
+    networks:
+      - superclaude-dev-network
+
+  superclaude-code-dev:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: superclaude-code-dev
+    environment:
+      NODE_ENV: development
+      MCP_SERVER_PORT: 3003
+      CONFIG_PATH: /app/shared/config/development.json
+    ports:
+      - "3003:3003"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - dev_data:/app/data
+      - dev_logs:/var/log/superclaude
+    command: ["npm", "run", "dev", "--workspace=superclaude-code"]
+    restart: unless-stopped
+    networks:
+      - superclaude-dev-network
+
+  superclaude-intelligence-dev:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: superclaude-intelligence-dev
+    environment:
+      NODE_ENV: development
+      MCP_SERVER_PORT: 3004
+      CONFIG_PATH: /app/shared/config/development.json
+    ports:
+      - "3004:3004"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - dev_data:/app/data
+      - dev_logs:/var/log/superclaude
+    command: ["npm", "run", "dev", "--workspace=superclaude-intelligence"]
+    restart: unless-stopped
+    networks:
+      - superclaude-dev-network
+
+  superclaude-ui-dev:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: superclaude-ui-dev
+    environment:
+      NODE_ENV: development
+      MCP_SERVER_PORT: 3005
+      CONFIG_PATH: /app/shared/config/development.json
+    ports:
+      - "3005:3005"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - dev_data:/app/data
+      - dev_logs:/var/log/superclaude
+    command: ["npm", "run", "dev", "--workspace=superclaude-ui"]
+    restart: unless-stopped
+    networks:
+      - superclaude-dev-network
+
+  superclaude-quality-dev:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: superclaude-quality-dev
+    environment:
+      NODE_ENV: development
+      MCP_SERVER_PORT: 3006
+      CONFIG_PATH: /app/shared/config/development.json
+    ports:
+      - "3006:3006"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - dev_data:/app/data
+      - dev_logs:/var/log/superclaude
+    command: ["npm", "run", "dev", "--workspace=superclaude-quality"]
+    restart: unless-stopped
+    networks:
+      - superclaude-dev-network
+
+  superclaude-performance-dev:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: superclaude-performance-dev
+    environment:
+      NODE_ENV: development
+      MCP_SERVER_PORT: 3007
+      CONFIG_PATH: /app/shared/config/development.json
+    ports:
+      - "3007:3007"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - dev_data:/app/data
+      - dev_logs:/var/log/superclaude
+    command: ["npm", "run", "dev", "--workspace=superclaude-performance"]
+    restart: unless-stopped
+    networks:
+      - superclaude-dev-network
+
+volumes:
+  dev_data:
+    driver: local
+  dev_logs:
+    driver: local
+
+networks:
+  superclaude-dev-network:
+    driver: bridge

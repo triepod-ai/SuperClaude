@@ -1,5 +1,5 @@
 import Parser from 'tree-sitter';
-import { logger } from '@superclaude/shared';
+import { logger } from '../../shared/src/utils/logger.js';
 import { v4 as uuidv4 } from 'uuid';
 import {
   SupportedLanguage,
@@ -8,8 +8,11 @@ import {
   ParseError
 } from '../types/index.js';
 
-// Language imports (these would be actual imports in production)
-// For now, we'll use mock implementations
+// Real language imports
+import TypeScript from 'tree-sitter-typescript';
+import JavaScript from 'tree-sitter-javascript';
+import Python from 'tree-sitter-python';
+
 interface LanguageModule {
   default: any;
 }
@@ -35,42 +38,50 @@ export class TreeSitterParser {
    */
   private async initializeLanguages(): Promise<void> {
     try {
-      // In production, these would be actual tree-sitter language modules
-      // For now, we'll use mock implementations
+      // Load actual tree-sitter language modules
       
       // TypeScript
-      this.languages.set('typescript', await this.loadLanguage('typescript'));
+      this.languages.set('typescript', TypeScript.typescript);
       
       // JavaScript  
-      this.languages.set('javascript', await this.loadLanguage('javascript'));
+      this.languages.set('javascript', JavaScript);
       
       // Python
-      this.languages.set('python', await this.loadLanguage('python'));
+      this.languages.set('python', Python);
       
-      // Other languages would be added similarly
+      // TSX support
+      this.languages.set('tsx', TypeScript.tsx);
       
       logger.info('Tree-sitter languages initialized', {
-        languageCount: this.languages.size
+        languageCount: this.languages.size,
+        languages: Array.from(this.languages.keys())
       });
       
     } catch (error) {
       logger.error('Failed to initialize tree-sitter languages', {
         error: error instanceof Error ? error.message : 'Unknown error'
       });
+      throw error;
     }
   }
 
   /**
-   * Load language module (mock implementation)
+   * Load language module
    */
   private async loadLanguage(language: string): Promise<any> {
-    // Mock implementation - in production this would load actual tree-sitter language
-    return {
-      name: language,
-      version: '1.0.0',
-      // Mock language object
-      nodeTypes: this.getMockNodeTypes(language)
+    const languageMap = {
+      'typescript': TypeScript.typescript,
+      'javascript': JavaScript,
+      'python': Python,
+      'tsx': TypeScript.tsx
     };
+    
+    const lang = languageMap[language as keyof typeof languageMap];
+    if (!lang) {
+      throw new Error(`Unsupported language: ${language}`);
+    }
+    
+    return lang;
   }
 
   /**
@@ -109,18 +120,22 @@ export class TreeSitterParser {
         throw new ParseError(`Unsupported language: ${language}`, '');
       }
 
-      // Mock parsing implementation
-      const tree = this.mockParse(content, language);
+      // Set language and parse with real Tree-sitter
+      this.parser.setLanguage(languageModule);
+      const tree = this.parser.parse(content);
       
-      // Extract symbols from AST
-      const symbols = this.extractSymbols(tree, language, content);
+      // Extract symbols from real AST
+      const symbols = this.extractSymbolsFromTree(tree, language, content);
       
       // Analyze structure
-      const structure = this.analyzeStructure(tree, symbols);
+      const structure = this.analyzeTreeStructure(tree, symbols);
 
       const result: ParseResult = {
         language,
-        tree,
+        tree: {
+          rootNode: this.convertNodeToMockNode(tree.rootNode),
+          language
+        },
         symbols,
         structure,
         parseTime: Date.now()
@@ -129,7 +144,8 @@ export class TreeSitterParser {
       logger.debug('Code parsing completed', {
         language,
         symbolCount: symbols.length,
-        structureDepth: structure.depth
+        structureDepth: structure.depth,
+        nodeCount: tree.rootNode.descendantCount
       });
 
       return result;
@@ -476,6 +492,177 @@ export class TreeSitterParser {
     }
 
     return count;
+  }
+
+  /**
+   * Convert Tree-sitter node to mock node format for compatibility
+   */
+  private convertNodeToMockNode(node: Parser.SyntaxNode): MockNode {
+    const children = node.children.map(child => this.convertNodeToMockNode(child));
+    
+    return {
+      type: node.type,
+      name: this.extractNodeName(node),
+      startPosition: {
+        row: node.startPosition.row,
+        column: node.startPosition.column
+      },
+      endPosition: {
+        row: node.endPosition.row,
+        column: node.endPosition.column
+      },
+      text: node.text,
+      children
+    };
+  }
+  
+  /**
+   * Extract meaningful name from syntax node
+   */
+  private extractNodeName(node: Parser.SyntaxNode): string {
+    // Try to find identifier child for named nodes
+    const identifierChild = node.children.find(child => 
+      child.type === 'identifier' || 
+      child.type === 'property_identifier' ||
+      child.type === 'type_identifier'
+    );
+    
+    if (identifierChild) {
+      return identifierChild.text;
+    }
+    
+    // For certain node types, look for specific patterns
+    if (node.type === 'function_declaration' || node.type === 'method_definition') {
+      const nameChild = node.children.find(child => child.type === 'identifier');
+      return nameChild?.text || 'anonymous';
+    }
+    
+    if (node.type === 'class_declaration') {
+      const nameChild = node.children.find(child => child.type === 'type_identifier' || child.type === 'identifier');
+      return nameChild?.text || 'anonymous';
+    }
+    
+    // Default to node type or first few characters
+    return node.text.split('\\n')[0].substring(0, 50) || node.type;
+  }
+
+  /**
+   * Extract symbols from real Tree-sitter tree
+   */
+  private extractSymbolsFromTree(tree: Parser.Tree, language: SupportedLanguage, content: string): SymbolInfo[] {
+    const symbols: SymbolInfo[] = [];
+    
+    const extractFromNode = (node: Parser.SyntaxNode, parentScope?: string): void => {
+      const nodeType = this.mapNodeTypeToSymbolType(node.type);
+      
+      if (nodeType) {
+        const symbolId = uuidv4();
+        const nodeName = this.extractNodeName(node);
+        
+        const symbol: SymbolInfo = {
+          id: symbolId,
+          name: nodeName,
+          type: nodeType,
+          kind: this.getSymbolKind(nodeType),
+          range: {
+            start: {
+              line: node.startPosition.row,
+              character: node.startPosition.column
+            },
+            end: {
+              line: node.endPosition.row,
+              character: node.endPosition.column
+            }
+          },
+          uri: '', // Will be set by caller
+          scope: parentScope,
+          references: [],
+          metadata: {
+            content: node.text.substring(0, 200), // Limit content size
+            nodeType: node.type,
+            hasChildren: node.childCount > 0,
+            isNamed: node.isNamed
+          }
+        };
+
+        symbols.push(symbol);
+        
+        // Extract from children
+        const childScope = (nodeType === 'class' || nodeType === 'function') ? nodeName : parentScope;
+        for (let i = 0; i < node.childCount; i++) {
+          extractFromNode(node.child(i)!, childScope);
+        }
+      } else {
+        // Still traverse children even if current node is not a symbol
+        for (let i = 0; i < node.childCount; i++) {
+          extractFromNode(node.child(i)!, parentScope);
+        }
+      }
+    };
+
+    extractFromNode(tree.rootNode);
+    
+    return symbols;
+  }
+
+  /**
+   * Analyze Tree-sitter tree structure
+   */
+  private analyzeTreeStructure(tree: Parser.Tree, symbols: SymbolInfo[]): CodeStructure {
+    const structure: CodeStructure = {
+      depth: this.calculateTreeDepth(tree.rootNode),
+      complexity: this.estimateTreeComplexity(tree.rootNode),
+      patterns: this.detectPatterns(symbols),
+      metrics: {
+        nodeCount: tree.rootNode.descendantCount,
+        functionCount: symbols.filter(s => s.type === 'function' || s.type === 'method').length,
+        classCount: symbols.filter(s => s.type === 'class').length,
+        variableCount: symbols.filter(s => s.type === 'variable').length
+      }
+    };
+
+    return structure;
+  }
+
+  /**
+   * Calculate Tree-sitter AST depth
+   */
+  private calculateTreeDepth(node: Parser.SyntaxNode): number {
+    if (node.childCount === 0) {
+      return 1;
+    }
+
+    let maxChildDepth = 0;
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child) {
+        const childDepth = this.calculateTreeDepth(child);
+        maxChildDepth = Math.max(maxChildDepth, childDepth);
+      }
+    }
+
+    return 1 + maxChildDepth;
+  }
+
+  /**
+   * Estimate complexity using Tree-sitter
+   */
+  private estimateTreeComplexity(node: Parser.SyntaxNode): number {
+    let complexity = 1;
+
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child) {
+        complexity += this.estimateTreeComplexity(child);
+        
+        // Add complexity for control structures
+        if (this.isControlStructure(child.type)) {
+          complexity += 1;
+        }
+      }
+    }
+
+    return complexity;
   }
 
   /**

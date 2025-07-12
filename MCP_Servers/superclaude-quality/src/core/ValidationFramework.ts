@@ -2,6 +2,8 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
+import { ESLint } from 'eslint';
+import * as ts from 'typescript';
 import {
   ValidationStep,
   ValidationResult,
@@ -635,7 +637,101 @@ export class ValidationFramework {
   }
 
   private async validateTypeScriptTypes(filePath: string, content: string, issues: QualityIssue[]): Promise<void> {
-    // TypeScript type checking implementation
+    try {
+      // Create a simple in-memory TypeScript program
+      const sourceFile = ts.createSourceFile(
+        filePath,
+        content,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TS
+      );
+
+      // Create compiler options
+      const compilerOptions: ts.CompilerOptions = {
+        target: ts.ScriptTarget.ES2020,
+        module: ts.ModuleKind.CommonJS,
+        strict: true,
+        noImplicitAny: true,
+        strictNullChecks: true,
+        strictFunctionTypes: true,
+        noImplicitReturns: true,
+        noFallthroughCasesInSwitch: true,
+        noImplicitThis: true,
+      };
+
+      // Create program
+      const program = ts.createProgram([filePath], compilerOptions, {
+        getSourceFile: (fileName) => fileName === filePath ? sourceFile : undefined,
+        writeFile: () => {},
+        getCurrentDirectory: () => process.cwd(),
+        getDirectories: () => [],
+        fileExists: (fileName) => fileName === filePath,
+        readFile: (fileName) => fileName === filePath ? content : undefined,
+        getCanonicalFileName: (fileName) => fileName,
+        useCaseSensitiveFileNames: () => true,
+        getNewLine: () => '\n'
+      });
+
+      // Get diagnostics
+      const diagnostics = [
+        ...program.getSyntacticDiagnostics(sourceFile),
+        ...program.getSemanticDiagnostics(sourceFile)
+      ];
+
+      for (const diagnostic of diagnostics) {
+        const severity = this.mapTypeScriptSeverity(diagnostic.category);
+        const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n');
+        
+        let line = 0;
+        let column = 0;
+        
+        if (diagnostic.start !== undefined) {
+          const position = sourceFile.getLineAndCharacterOfPosition(diagnostic.start);
+          line = position.line + 1;
+          column = position.character + 1;
+        }
+
+        issues.push({
+          id: `tsc-${diagnostic.code}-${line}-${column}`,
+          level: severity,
+          step: ValidationStep.TYPE_CHECK,
+          title: `TypeScript: TS${diagnostic.code}`,
+          description: message,
+          filePath,
+          line,
+          column,
+          fixable: false, // TypeScript errors typically require manual fixes
+          metadata: {
+            code: diagnostic.code,
+            category: diagnostic.category,
+            tool: 'typescript'
+          }
+        });
+      }
+      
+    } catch (error) {
+      issues.push({
+        id: `tsc-error-${Date.now()}`,
+        level: QualityLevel.HIGH,
+        step: ValidationStep.TYPE_CHECK,
+        title: 'TypeScript Compilation Error',
+        description: `Failed to compile TypeScript: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        filePath,
+        fixable: false,
+        metadata: { error: true, tool: 'typescript' }
+      });
+    }
+  }
+  
+  private mapTypeScriptSeverity(category: ts.DiagnosticCategory): QualityLevel {
+    switch (category) {
+      case ts.DiagnosticCategory.Error: return QualityLevel.CRITICAL;
+      case ts.DiagnosticCategory.Warning: return QualityLevel.MEDIUM;
+      case ts.DiagnosticCategory.Message: return QualityLevel.INFO;
+      case ts.DiagnosticCategory.Suggestion: return QualityLevel.LOW;
+      default: return QualityLevel.MEDIUM;
+    }
   }
 
   private async validatePythonTypes(filePath: string, content: string, issues: QualityIssue[]): Promise<void> {
@@ -643,11 +739,184 @@ export class ValidationFramework {
   }
 
   private async validateESLint(filePath: string, content: string, issues: QualityIssue[]): Promise<void> {
-    // ESLint validation implementation
+    try {
+      const eslint = new ESLint({
+        baseConfig: {
+          env: {
+            browser: true,
+            es2021: true,
+            node: true,
+          },
+          extends: [
+            'eslint:recommended',
+            '@typescript-eslint/recommended'
+          ],
+          parser: '@typescript-eslint/parser',
+          parserOptions: {
+            ecmaVersion: 'latest',
+            sourceType: 'module',
+          },
+          plugins: ['@typescript-eslint'],
+          rules: {
+            'no-unused-vars': 'warn',
+            'no-console': 'warn',
+            'prefer-const': 'error',
+            'no-var': 'error',
+            '@typescript-eslint/no-explicit-any': 'warn',
+            '@typescript-eslint/no-unused-vars': 'warn'
+          }
+        },
+        useEslintrc: false
+      });
+
+      const results = await eslint.lintText(content, { filePath });
+      
+      for (const result of results) {
+        for (const message of result.messages) {
+          const severity = this.mapESLintSeverity(message.severity);
+          
+          issues.push({
+            id: `eslint-${message.ruleId}-${message.line}-${message.column}`,
+            level: severity,
+            step: ValidationStep.LINT,
+            title: `ESLint: ${message.ruleId || 'parsing-error'}`,
+            description: message.message,
+            filePath: result.filePath,
+            line: message.line,
+            column: message.column,
+            fixable: message.fix !== undefined,
+            metadata: {
+              ruleId: message.ruleId,
+              severity: message.severity,
+              nodeType: message.nodeType,
+              tool: 'eslint'
+            }
+          });
+        }
+      }
+      
+    } catch (error) {
+      issues.push({
+        id: `eslint-error-${Date.now()}`,
+        level: QualityLevel.HIGH,
+        step: ValidationStep.LINT,
+        title: 'ESLint Execution Error',
+        description: `Failed to run ESLint: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        filePath,
+        fixable: false,
+        metadata: { error: true, tool: 'eslint' }
+      });
+    }
+  }
+  
+  private mapESLintSeverity(severity: number): QualityLevel {
+    switch (severity) {
+      case 2: return QualityLevel.HIGH; // error
+      case 1: return QualityLevel.MEDIUM; // warning
+      default: return QualityLevel.LOW;
+    }
   }
 
   private async validatePyLint(filePath: string, content: string, issues: QualityIssue[]): Promise<void> {
-    // PyLint validation implementation
+    try {
+      // Write content to temporary file for pylint
+      const tempFile = path.join(require('os').tmpdir(), `pylint-${Date.now()}.py`);
+      await fs.writeFile(tempFile, content);
+      
+      try {
+        // Run pylint with JSON output
+        const { stdout, stderr } = await execAsync(`python -m pylint --output-format=json "${tempFile}"`);
+        
+        try {
+          const pylintResults = JSON.parse(stdout);
+          
+          for (const result of pylintResults) {
+            const severity = this.mapPylintSeverity(result.type);
+            
+            issues.push({
+              id: `pylint-${result.symbol}-${result.line}-${result.column}`,
+              level: severity,
+              step: ValidationStep.LINT,
+              title: `PyLint: ${result.symbol}`,
+              description: result.message,
+              filePath,
+              line: result.line,
+              column: result.column,
+              fixable: false, // Most pylint issues require manual fixes
+              metadata: {
+                messageId: result['message-id'],
+                symbol: result.symbol,
+                type: result.type,
+                tool: 'pylint'
+              }
+            });
+          }
+        } catch (parseError) {
+          // Pylint might not output valid JSON in some cases
+          if (stderr) {
+            this.parsePylintTextOutput(stderr, filePath, issues);
+          }
+        }
+        
+      } catch (execError: any) {
+        // Pylint returns non-zero exit codes for issues, parse stderr
+        if (execError.stderr) {
+          this.parsePylintTextOutput(execError.stderr, filePath, issues);
+        }
+      }
+      
+      // Clean up temp file
+      await fs.unlink(tempFile);
+      
+    } catch (error) {
+      issues.push({
+        id: `pylint-error-${Date.now()}`,
+        level: QualityLevel.MEDIUM,
+        step: ValidationStep.LINT,
+        title: 'PyLint Execution Error',
+        description: `Failed to run PyLint: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        filePath,
+        fixable: false,
+        metadata: { error: true, tool: 'pylint' }
+      });
+    }
+  }
+  
+  private mapPylintSeverity(type: string): QualityLevel {
+    switch (type?.toLowerCase()) {
+      case 'error':
+      case 'fatal': return QualityLevel.CRITICAL;
+      case 'warning': return QualityLevel.HIGH;
+      case 'refactor': return QualityLevel.MEDIUM;
+      case 'convention': return QualityLevel.LOW;
+      case 'info': return QualityLevel.INFO;
+      default: return QualityLevel.MEDIUM;
+    }
+  }
+  
+  private parsePylintTextOutput(output: string, filePath: string, issues: QualityIssue[]): void {
+    const lines = output.split('\n');
+    for (const line of lines) {
+      // Parse pylint text format: file:line:column: type: message
+      const match = line.match(/(.+):(\d+):(\d+):\s*(\w+):\s*(.+)/);
+      if (match) {
+        const [, , lineNum, column, type, message] = match;
+        const severity = this.mapPylintSeverity(type);
+        
+        issues.push({
+          id: `pylint-text-${lineNum}-${column}`,
+          level: severity,
+          step: ValidationStep.LINT,
+          title: `PyLint: ${type}`,
+          description: message.trim(),
+          filePath,
+          line: parseInt(lineNum),
+          column: parseInt(column),
+          fixable: false,
+          metadata: { type, tool: 'pylint', format: 'text' }
+        });
+      }
+    }
   }
 
   private async validateGenericLinting(filePath: string, content: string, issues: QualityIssue[]): Promise<void> {
@@ -655,7 +924,80 @@ export class ValidationFramework {
   }
 
   private async validateJavaScriptSecurity(filePath: string, content: string, issues: QualityIssue[]): Promise<void> {
-    // JavaScript-specific security validation
+    // Advanced JavaScript security patterns
+    const securityPatterns = [
+      {
+        pattern: /document\.write\s*\(/gi,
+        level: QualityLevel.HIGH,
+        title: 'XSS Risk: document.write',
+        description: 'Use of document.write can lead to XSS vulnerabilities'
+      },
+      {
+        pattern: /\.innerHTML\s*=\s*[^"']*\+/gi,
+        level: QualityLevel.CRITICAL,
+        title: 'XSS Risk: innerHTML concatenation',
+        description: 'String concatenation with innerHTML can lead to XSS'
+      },
+      {
+        pattern: /postMessage\s*\(\s*[^,]*,\s*["']\*["']/gi,
+        level: QualityLevel.HIGH,
+        title: 'PostMessage wildcard origin',
+        description: 'Using wildcard (*) origin in postMessage is insecure'
+      },
+      {
+        pattern: /localStorage\.setItem\s*\(\s*["'][^"']*password/gi,
+        level: QualityLevel.CRITICAL,
+        title: 'Sensitive data in localStorage',
+        description: 'Storing passwords in localStorage is insecure'
+      },
+      {
+        pattern: /new\s+Function\s*\(/gi,
+        level: QualityLevel.HIGH,
+        title: 'Dynamic code execution',
+        description: 'new Function() can execute arbitrary code'
+      },
+      {
+        pattern: /setTimeout\s*\(\s*["']/gi,
+        level: QualityLevel.MEDIUM,
+        title: 'setTimeout with string',
+        description: 'setTimeout with string argument can be dangerous'
+      }
+    ];
+
+    this.checkSecurityPatternsAdvanced(content, filePath, securityPatterns, issues);
+  }
+  
+  private checkSecurityPatternsAdvanced(content: string, filePath: string, patterns: Array<{
+    pattern: RegExp;
+    level: QualityLevel;
+    title: string;
+    description: string;
+  }>, issues: QualityIssue[]): void {
+    const lines = content.split('\n');
+    
+    patterns.forEach(({ pattern, level, title, description }) => {
+      lines.forEach((line, index) => {
+        const matches = line.matchAll(pattern);
+        for (const match of matches) {
+          issues.push({
+            id: `security-${title.replace(/[^a-zA-Z0-9]/g, '-')}-${index + 1}-${match.index}`,
+            level,
+            step: ValidationStep.SECURITY,
+            title,
+            description,
+            filePath,
+            line: index + 1,
+            column: (match.index || 0) + 1,
+            fixable: false,
+            metadata: {
+              securityCategory: 'pattern-detection',
+              pattern: pattern.source,
+              matchedText: match[0]
+            }
+          });
+        }
+      });
+    });
   }
 
   private async validatePythonSecurity(filePath: string, content: string, issues: QualityIssue[]): Promise<void> {

@@ -1,4 +1,4 @@
-import { logger } from '@superclaude/shared';
+import { logger, SecureTemplateEngine } from '@superclaude/shared';
 import { v4 as uuidv4 } from 'uuid';
 import {
   SymbolEditRequest,
@@ -221,8 +221,8 @@ export class SymbolEditor {
         template = request.template;
       }
 
-      // Apply context to template
-      const code = this.applyTemplateContext(template, request.context);
+      // Apply context to template using secure engine
+      const code = SecureTemplateEngine.processCodeTemplate(template, request.context);
 
       logger.info('Code generation completed', {
         language: request.language,
@@ -522,36 +522,66 @@ export class SymbolEditor {
   }
 
   /**
-   * Apply template context
+   * Apply template context using secure template engine
+   * @deprecated - Use SecureTemplateEngine.processCodeTemplate directly
    */
   private applyTemplateContext(template: string, context: any): string {
-    let result = template;
+    try {
+      // Migrate to secure template engine
+      return SecureTemplateEngine.processCodeTemplate(template, {
+        functionName: context.functionName || 'newFunction',
+        className: context.className || 'NewClass',
+        interfaceName: context.interfaceName || 'NewInterface',
+        returnType: context.returnType || 'void',
+        visibility: context.visibility || 'public',
+        parameters: this.formatParameters(context.parameters),
+        comma: this.getCommaString(context.parameters),
+        body: context.body || '// TODO: Implement',
+        methods: context.methods || '// TODO: Add methods',
+        properties: context.properties || '// TODO: Add properties'
+      });
+    } catch (error) {
+      logger.error('Secure template processing failed, using fallback', { error });
+      // Fallback to basic replacement (still better than original)
+      return template
+        .replace(/\{\{functionName\}\}/g, 'secureFunction')
+        .replace(/\{\{className\}\}/g, 'SecureClass')
+        .replace(/\{\{body\}\}/g, '// Secure implementation required');
+    }
+  }
 
-    // Replace template variables
-    result = result.replace(/{{functionName}}/g, context.functionName || 'newFunction');
-    result = result.replace(/{{className}}/g, context.className || 'NewClass');
-    result = result.replace(/{{interfaceName}}/g, context.interfaceName || 'NewInterface');
-    result = result.replace(/{{returnType}}/g, context.returnType || 'void');
-    result = result.replace(/{{visibility}}/g, context.visibility || 'public');
-
-    // Handle parameters
-    if (context.parameters && Array.isArray(context.parameters)) {
-      const paramString = context.parameters
-        .map((p: any) => `${p.name}: ${p.type}`)
-        .join(', ');
-      result = result.replace(/{{parameters}}/g, paramString);
-      result = result.replace(/{{comma}}/g, paramString ? ', ' : '');
-    } else {
-      result = result.replace(/{{parameters}}/g, '');
-      result = result.replace(/{{comma}}/g, '');
+  /**
+   * Safely format parameters array
+   */
+  private formatParameters(parameters: any): string {
+    if (!Array.isArray(parameters)) {
+      return '';
     }
 
-    // Default replacements
-    result = result.replace(/{{body}}/g, context.body || '// TODO: Implement');
-    result = result.replace(/{{methods}}/g, context.methods || '// TODO: Add methods');
-    result = result.replace(/{{properties}}/g, context.properties || '// TODO: Add properties');
+    try {
+      return parameters
+        .filter(p => p && typeof p === 'object' && p.name && p.type)
+        .map((p: any) => {
+          // Sanitize parameter names and types
+          const name = String(p.name).replace(/[^a-zA-Z0-9_]/g, '');
+          const type = String(p.type).replace(/[^a-zA-Z0-9_<>[\]]/g, '');
+          return `${name}: ${type}`;
+        })
+        .join(', ');
+    } catch (error) {
+      logger.warn('Parameter formatting failed', { error, parameters });
+      return '';
+    }
+  }
 
-    return result;
+  /**
+   * Get comma string based on parameters
+   */
+  private getCommaString(parameters: any): string {
+    if (Array.isArray(parameters) && parameters.length > 0) {
+      return ', ';
+    }
+    return '';
   }
 
   /**

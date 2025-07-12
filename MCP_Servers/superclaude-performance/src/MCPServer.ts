@@ -1802,6 +1802,36 @@ export class SuperClaudePerformanceServer {
   async start(): Promise<void> {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
+    
+    // Setup graceful shutdown
+    this.setupGracefulShutdown();
+    
     console.error('SuperClaude Performance MCP server running on stdio');
+  }
+
+  /**
+   * Setup graceful shutdown handlers
+   */
+  private setupGracefulShutdown(): void {
+    const shutdown = async (signal: string) => {
+      logger.info(`Received ${signal}, shutting down gracefully...`);
+      
+      try {
+        // Cleanup all components
+        this.performanceProfiler.cleanup();
+        this.complexityEstimator.clearCache();
+        this.crossServerOptimizer.clearCache();
+        
+        logger.info('SuperClaude Performance server shutdown completed');
+        process.exit(0);
+      } catch (error) {
+        logger.error('Error during shutdown', { error });
+        process.exit(1);
+      }
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('SIGHUP', () => shutdown('SIGHUP'));
   }
 }

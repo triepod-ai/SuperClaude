@@ -1,4 +1,727 @@
 import { EventEmitter } from 'eventemitter3';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '@superclaude/shared';
-import {\n  WaveExecutionPlan,\n  WaveExecution,\n  WaveStatus,\n  WaveStrategy,\n  WaveExecutionError\n} from '../types/index.js';\n\n/**\n * Manages wave-based execution for complex multi-phase operations\n * Implements compound intelligence through progressive enhancement\n */\nexport class WaveManager extends EventEmitter {\n  private activeExecutions: Map<string, WaveExecution>;\n  private executionHistory: Map<string, WaveExecution>;\n  private phaseTimeout: number = 600000; // 10 minutes per phase\n  \n  constructor() {\n    super();\n    this.activeExecutions = new Map();\n    this.executionHistory = new Map();\n  }\n\n  /**\n   * Execute wave plan\n   */\n  async executePlan(plan: WaveExecutionPlan): Promise<WaveExecution> {\n    const execution: WaveExecution = {\n      id: uuidv4(),\n      planId: plan.id,\n      status: 'planning',\n      startTime: new Date(),\n      totalTokensUsed: 0,\n      completedPhases: [],\n      failedPhases: [],\n      results: [],\n      errors: [],\n      metadata: { strategy: plan.strategy }\n    };\n    \n    try {\n      logger.info('Starting wave execution', {\n        executionId: execution.id,\n        planId: plan.id,\n        strategy: plan.strategy,\n        phaseCount: plan.phases.length\n      });\n      \n      this.activeExecutions.set(execution.id, execution);\n      \n      // Emit start event\n      this.emit('wave-started', execution);\n      \n      // Update status to executing\n      execution.status = 'executing';\n      \n      // Execute based on strategy\n      switch (plan.strategy) {\n        case 'progressive':\n          await this.executeProgressive(plan, execution);\n          break;\n        case 'systematic':\n          await this.executeSystematic(plan, execution);\n          break;\n        case 'adaptive':\n          await this.executeAdaptive(plan, execution);\n          break;\n        case 'enterprise':\n          await this.executeEnterprise(plan, execution);\n          break;\n        default:\n          throw new WaveExecutionError(\n            `Unknown wave strategy: ${plan.strategy}`,\n            execution.id\n          );\n      }\n      \n      // Complete execution\n      execution.status = 'completed';\n      execution.endTime = new Date();\n      \n      // Move to history\n      this.executionHistory.set(execution.id, execution);\n      this.activeExecutions.delete(execution.id);\n      \n      logger.info('Wave execution completed', {\n        executionId: execution.id,\n        completedPhases: execution.completedPhases.length,\n        totalTokens: execution.totalTokensUsed\n      });\n      \n      // Emit completion event\n      this.emit('wave-completed', execution);\n      \n      return execution;\n      \n    } catch (error) {\n      execution.status = 'failed';\n      execution.endTime = new Date();\n      execution.errors.push(error instanceof Error ? error.message : 'Unknown error');\n      \n      // Move to history\n      this.executionHistory.set(execution.id, execution);\n      this.activeExecutions.delete(execution.id);\n      \n      logger.error('Wave execution failed', {\n        executionId: execution.id,\n        error: error instanceof Error ? error.message : 'Unknown error'\n      });\n      \n      // Emit failure event\n      this.emit('wave-failed', execution, error);\n      \n      throw error;\n    }\n  }\n\n  /**\n   * Execute progressive wave strategy\n   * Incremental enhancement with iterative improvement\n   */\n  private async executeProgressive(plan: WaveExecutionPlan, execution: WaveExecution): Promise<void> {\n    logger.info('Executing progressive wave strategy', {\n      executionId: execution.id,\n      phaseCount: plan.phases.length\n    });\n    \n    // Sort phases by priority (highest first)\n    const sortedPhases = [...plan.phases].sort((a, b) => b.priority - a.priority);\n    \n    for (const phase of sortedPhases) {\n      try {\n        // Check dependencies\n        if (!this.areDependenciesMet(phase.dependencies, execution.completedPhases)) {\n          logger.warn('Phase dependencies not met, skipping', {\n            phaseId: phase.id,\n            dependencies: phase.dependencies,\n            completed: execution.completedPhases\n          });\n          continue;\n        }\n        \n        execution.currentPhase = phase.id;\n        \n        logger.info('Executing phase', {\n          executionId: execution.id,\n          phaseId: phase.id,\n          phaseName: phase.name\n        });\n        \n        // Execute phase with timeout\n        const phaseResult = await this.executePhaseWithTimeout(phase, execution);\n        \n        // Update execution state\n        execution.completedPhases.push(phase.id);\n        execution.results.push(phaseResult);\n        execution.totalTokensUsed += phase.estimatedTokens;\n        \n        // Progressive enhancement: adapt based on results\n        await this.adaptBasedOnResults(execution, phaseResult);\n        \n      } catch (error) {\n        logger.error('Phase execution failed', {\n          phaseId: phase.id,\n          error: error instanceof Error ? error.message : 'Unknown error'\n        });\n        \n        execution.failedPhases.push(phase.id);\n        execution.errors.push(`Phase ${phase.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);\n        \n        // Progressive strategy: continue with other phases unless critical\n        if (phase.priority >= 9) {\n          throw new WaveExecutionError(\n            `Critical phase failed: ${phase.id}`,\n            execution.id\n          );\n        }\n      }\n    }\n  }\n\n  /**\n   * Execute systematic wave strategy\n   * Methodical analysis with strict ordering\n   */\n  private async executeSystematic(plan: WaveExecutionPlan, execution: WaveExecution): Promise<void> {\n    logger.info('Executing systematic wave strategy', {\n      executionId: execution.id,\n      phaseCount: plan.phases.length\n    });\n    \n    // Systematic strategy requires dependency-ordered execution\n    const orderedPhases = this.orderPhasesByDependencies(plan.phases);\n    \n    for (const phase of orderedPhases) {\n      try {\n        execution.currentPhase = phase.id;\n        \n        logger.info('Executing phase systematically', {\n          executionId: execution.id,\n          phaseId: phase.id,\n          phaseName: phase.name\n        });\n        \n        // Execute phase\n        const phaseResult = await this.executePhaseWithTimeout(phase, execution);\n        \n        // Update execution state\n        execution.completedPhases.push(phase.id);\n        execution.results.push(phaseResult);\n        execution.totalTokensUsed += phase.estimatedTokens;\n        \n        // Validation if required\n        if (plan.validationRequired) {\n          await this.validatePhaseResult(phase, phaseResult, execution);\n        }\n        \n      } catch (error) {\n        // Systematic strategy: fail fast on any error\n        throw new WaveExecutionError(\n          `Systematic execution failed at phase ${phase.id}: ${error instanceof Error ? error.message : 'Unknown error'}`,\n          execution.id\n        );\n      }\n    }\n  }\n\n  /**\n   * Execute adaptive wave strategy\n   * Dynamic configuration based on execution context\n   */\n  private async executeAdaptive(plan: WaveExecutionPlan, execution: WaveExecution): Promise<void> {\n    logger.info('Executing adaptive wave strategy', {\n      executionId: execution.id,\n      phaseCount: plan.phases.length\n    });\n    \n    let remainingPhases = [...plan.phases];\n    let concurrentPhases = Math.min(plan.maxConcurrentPhases, 2); // Start conservative\n    \n    while (remainingPhases.length > 0) {\n      // Select phases to execute concurrently\n      const executablePhases = this.selectExecutablePhases(\n        remainingPhases,\n        execution.completedPhases,\n        concurrentPhases\n      );\n      \n      if (executablePhases.length === 0) {\n        throw new WaveExecutionError(\n          'No executable phases found - possible circular dependency',\n          execution.id\n        );\n      }\n      \n      try {\n        // Execute phases concurrently\n        const phasePromises = executablePhases.map(phase => \n          this.executePhaseWithTimeout(phase, execution)\n        );\n        \n        const results = await Promise.allSettled(phasePromises);\n        \n        // Process results\n        for (let i = 0; i < results.length; i++) {\n          const result = results[i];\n          const phase = executablePhases[i];\n          \n          if (result.status === 'fulfilled') {\n            execution.completedPhases.push(phase.id);\n            execution.results.push(result.value);\n            execution.totalTokensUsed += phase.estimatedTokens;\n          } else {\n            execution.failedPhases.push(phase.id);\n            execution.errors.push(`Phase ${phase.id}: ${result.reason}`);\n          }\n        }\n        \n        // Remove completed/failed phases\n        remainingPhases = remainingPhases.filter(phase => \n          !execution.completedPhases.includes(phase.id) &&\n          !execution.failedPhases.includes(phase.id)\n        );\n        \n        // Adapt concurrency based on success rate\n        const successRate = executablePhases.length > 0 ? \n          execution.completedPhases.length / (execution.completedPhases.length + execution.failedPhases.length) : 1;\n        \n        if (successRate > 0.8 && concurrentPhases < plan.maxConcurrentPhases) {\n          concurrentPhases += 1;\n        } else if (successRate < 0.5 && concurrentPhases > 1) {\n          concurrentPhases -= 1;\n        }\n        \n      } catch (error) {\n        throw new WaveExecutionError(\n          `Adaptive execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,\n          execution.id\n        );\n      }\n    }\n  }\n\n  /**\n   * Execute enterprise wave strategy\n   * Large-scale orchestration with full validation\n   */\n  private async executeEnterprise(plan: WaveExecutionPlan, execution: WaveExecution): Promise<void> {\n    logger.info('Executing enterprise wave strategy', {\n      executionId: execution.id,\n      phaseCount: plan.phases.length\n    });\n    \n    // Enterprise strategy: full validation and checkpoint system\n    const checkpoints: string[] = [];\n    const orderedPhases = this.orderPhasesByDependencies(plan.phases);\n    \n    for (const phase of orderedPhases) {\n      try {\n        execution.currentPhase = phase.id;\n        \n        // Pre-execution validation\n        await this.validatePreExecution(phase, execution);\n        \n        logger.info('Executing enterprise phase', {\n          executionId: execution.id,\n          phaseId: phase.id,\n          phaseName: phase.name,\n          checkpoint: checkpoints.length\n        });\n        \n        // Execute with full monitoring\n        const phaseResult = await this.executePhaseWithTimeout(phase, execution);\n        \n        // Post-execution validation\n        await this.validatePhaseResult(phase, phaseResult, execution);\n        \n        // Update state\n        execution.completedPhases.push(phase.id);\n        execution.results.push(phaseResult);\n        execution.totalTokensUsed += phase.estimatedTokens;\n        \n        // Create checkpoint\n        checkpoints.push(phase.id);\n        await this.createCheckpoint(execution, phase.id);\n        \n        logger.info('Enterprise phase completed with checkpoint', {\n          phaseId: phase.id,\n          checkpointCount: checkpoints.length\n        });\n        \n      } catch (error) {\n        logger.error('Enterprise phase failed', {\n          phaseId: phase.id,\n          error: error instanceof Error ? error.message : 'Unknown error'\n        });\n        \n        // Enterprise strategy: implement rollback if configured\n        if (plan.rollbackStrategy === 'immediate') {\n          await this.rollbackToLastCheckpoint(execution, checkpoints);\n        }\n        \n        throw new WaveExecutionError(\n          `Enterprise execution failed at phase ${phase.id}: ${error instanceof Error ? error.message : 'Unknown error'}`,\n          execution.id\n        );\n      }\n    }\n  }\n\n  // ==================== HELPER METHODS ====================\n\n  /**\n   * Execute phase with timeout\n   */\n  private async executePhaseWithTimeout(phase: any, execution: WaveExecution): Promise<Record<string, unknown>> {\n    return new Promise((resolve, reject) => {\n      const timer = setTimeout(() => {\n        reject(new Error(`Phase ${phase.id} timed out after ${this.phaseTimeout}ms`));\n      }, this.phaseTimeout);\n      \n      // Mock phase execution\n      this.executePhase(phase, execution)\n        .then(result => {\n          clearTimeout(timer);\n          resolve(result);\n        })\n        .catch(error => {\n          clearTimeout(timer);\n          reject(error);\n        });\n    });\n  }\n\n  /**\n   * Execute individual phase (mock implementation)\n   */\n  private async executePhase(phase: any, execution: WaveExecution): Promise<Record<string, unknown>> {\n    // Mock implementation - would delegate to actual task execution\n    await new Promise(resolve => setTimeout(resolve, 100 + Math.random() * 200));\n    \n    return {\n      phaseId: phase.id,\n      phaseName: phase.name,\n      result: `Completed phase: ${phase.name}`,\n      tokensUsed: phase.estimatedTokens,\n      executionTime: 100 + Math.random() * 200,\n      timestamp: new Date()\n    };\n  }\n\n  /**\n   * Check if dependencies are met\n   */\n  private areDependenciesMet(dependencies: string[], completedPhases: string[]): boolean {\n    return dependencies.every(dep => completedPhases.includes(dep));\n  }\n\n  /**\n   * Order phases by dependencies (topological sort)\n   */\n  private orderPhasesByDependencies(phases: any[]): any[] {\n    const ordered: any[] = [];\n    const visited = new Set<string>();\n    const visiting = new Set<string>();\n    \n    const visit = (phase: any): void => {\n      if (visiting.has(phase.id)) {\n        throw new Error(`Circular dependency detected involving phase: ${phase.id}`);\n      }\n      \n      if (visited.has(phase.id)) {\n        return;\n      }\n      \n      visiting.add(phase.id);\n      \n      // Visit dependencies first\n      for (const depId of phase.dependencies) {\n        const depPhase = phases.find(p => p.id === depId);\n        if (depPhase) {\n          visit(depPhase);\n        }\n      }\n      \n      visiting.delete(phase.id);\n      visited.add(phase.id);\n      ordered.push(phase);\n    };\n    \n    for (const phase of phases) {\n      if (!visited.has(phase.id)) {\n        visit(phase);\n      }\n    }\n    \n    return ordered;\n  }\n\n  /**\n   * Select executable phases for concurrent execution\n   */\n  private selectExecutablePhases(\n    remainingPhases: any[],\n    completedPhases: string[],\n    maxCount: number\n  ): any[] {\n    return remainingPhases\n      .filter(phase => this.areDependenciesMet(phase.dependencies, completedPhases))\n      .sort((a, b) => b.priority - a.priority)\n      .slice(0, maxCount);\n  }\n\n  /**\n   * Adapt based on phase results\n   */\n  private async adaptBasedOnResults(execution: WaveExecution, result: Record<string, unknown>): Promise<void> {\n    // Mock adaptation logic\n    logger.debug('Adapting based on phase results', {\n      executionId: execution.id,\n      resultKeys: Object.keys(result)\n    });\n  }\n\n  /**\n   * Validate phase result\n   */\n  private async validatePhaseResult(\n    phase: any,\n    result: Record<string, unknown>,\n    execution: WaveExecution\n  ): Promise<void> {\n    // Mock validation logic\n    if (!result || Object.keys(result).length === 0) {\n      throw new Error(`Phase ${phase.id} produced empty result`);\n    }\n  }\n\n  /**\n   * Validate pre-execution conditions\n   */\n  private async validatePreExecution(phase: any, execution: WaveExecution): Promise<void> {\n    // Mock pre-execution validation\n    if (!this.areDependenciesMet(phase.dependencies, execution.completedPhases)) {\n      throw new Error(`Phase ${phase.id} dependencies not met`);\n    }\n  }\n\n  /**\n   * Create checkpoint\n   */\n  private async createCheckpoint(execution: WaveExecution, phaseId: string): Promise<void> {\n    // Mock checkpoint creation\n    logger.debug('Creating checkpoint', {\n      executionId: execution.id,\n      phaseId\n    });\n  }\n\n  /**\n   * Rollback to last checkpoint\n   */\n  private async rollbackToLastCheckpoint(execution: WaveExecution, checkpoints: string[]): Promise<void> {\n    // Mock rollback logic\n    logger.warn('Rolling back to last checkpoint', {\n      executionId: execution.id,\n      lastCheckpoint: checkpoints[checkpoints.length - 1]\n    });\n  }\n\n  /**\n   * Cancel execution\n   */\n  async cancelExecution(executionId: string): Promise<void> {\n    const execution = this.activeExecutions.get(executionId);\n    if (!execution) {\n      throw new Error(`Execution not found: ${executionId}`);\n    }\n    \n    execution.status = 'cancelled';\n    execution.endTime = new Date();\n    \n    // Move to history\n    this.executionHistory.set(executionId, execution);\n    this.activeExecutions.delete(executionId);\n    \n    logger.info('Wave execution cancelled', { executionId });\n  }\n\n  /**\n   * Get execution history\n   */\n  getExecutionHistory(): WaveExecution[] {\n    return Array.from(this.executionHistory.values());\n  }\n\n  /**\n   * Cleanup resources\n   */\n  async cleanup(): Promise<void> {\n    try {\n      // Cancel all active executions\n      const activeIds = Array.from(this.activeExecutions.keys());\n      await Promise.all(activeIds.map(id => this.cancelExecution(id)));\n      \n      this.activeExecutions.clear();\n      \n      logger.info('WaveManager cleanup completed');\n      \n    } catch (error) {\n      logger.error('Error during WaveManager cleanup', {\n        error: error instanceof Error ? error.message : 'Unknown error'\n      });\n      throw error;\n    }\n  }\n}"
+import {
+  WaveExecutionPlan,
+  WaveExecution,
+  WaveStatus,
+  WaveStrategy,
+  WaveExecutionError
+} from '../types/index.js';
+import { AsyncMutex, AtomicCounter, ThreadSafeMap, AtomicBoolean } from '../utils/concurrency.js';
+
+/**
+ * Manages wave-based execution for complex multi-phase operations
+ * Implements compound intelligence through progressive enhancement
+ * Thread-safe with proper synchronization for concurrent operations
+ */
+export class WaveManager extends EventEmitter {
+  private activeExecutions: ThreadSafeMap<string, WaveExecution>;
+  private executionHistory: ThreadSafeMap<string, WaveExecution>;
+  private phaseTimeout: number = 600000; // 10 minutes per phase
+  private executionMutex: AsyncMutex;
+  private phaseMutex: AsyncMutex;
+  private cleanupMutex: AsyncMutex;
+  private executionCounter: AtomicCounter;
+  private isShuttingDown: AtomicBoolean;
+  
+  constructor() {
+    super();
+    this.activeExecutions = new ThreadSafeMap();
+    this.executionHistory = new ThreadSafeMap();
+    this.executionMutex = new AsyncMutex();
+    this.phaseMutex = new AsyncMutex();
+    this.cleanupMutex = new AsyncMutex();
+    this.executionCounter = new AtomicCounter();
+    this.isShuttingDown = new AtomicBoolean(false);
+  }
+
+  /**
+   * Execute wave plan with proper synchronization
+   */
+  async executePlan(plan: WaveExecutionPlan): Promise<WaveExecution> {
+    // Check if shutting down
+    if (this.isShuttingDown.get()) {
+      throw new WaveExecutionError('WaveManager is shutting down', 'shutdown');
+    }
+
+    // Acquire execution lock to prevent race conditions
+    const release = await this.executionMutex.acquire();
+    
+    try {
+      const executionId = uuidv4();
+      const execution: WaveExecution = {
+        id: executionId,
+        planId: plan.id,
+        status: 'planning',
+        startTime: new Date(),
+        totalTokensUsed: 0,
+        completedPhases: [],
+        failedPhases: [],
+        results: [],
+        errors: [],
+        metadata: { strategy: plan.strategy }
+      };
+      
+      logger.info('Starting wave execution', {
+        executionId: execution.id,
+        planId: plan.id,
+        strategy: plan.strategy,
+        phaseCount: plan.phases.length,
+        activeExecutions: this.activeExecutions.size
+      });
+      
+      // Atomically add to active executions
+      await this.activeExecutions.set(execution.id, execution);
+      await this.executionCounter.increment();
+      
+      // Emit start event after safely storing
+      this.emit('wave-started', execution);
+      
+      // Update status to executing
+      execution.status = 'executing';
+      
+      // Execute based on strategy
+      switch (plan.strategy) {
+        case 'progressive':
+          await this.executeProgressive(plan, execution);
+          break;
+        case 'systematic':
+          await this.executeSystematic(plan, execution);
+          break;
+        case 'adaptive':
+          await this.executeAdaptive(plan, execution);
+          break;
+        case 'enterprise':
+          await this.executeEnterprise(plan, execution);
+          break;
+        default:
+          throw new WaveExecutionError(
+            `Unknown wave strategy: ${plan.strategy}`,
+            execution.id
+          );
+      }
+      
+      // Atomically complete execution
+      await this.completeExecution(execution, 'completed');
+      
+      logger.info('Wave execution completed', {
+        executionId: execution.id,
+        completedPhases: execution.completedPhases.length,
+        totalTokens: execution.totalTokensUsed
+      });
+      
+      // Emit completion event
+      this.emit('wave-completed', execution);
+      
+      return execution;
+      
+    } catch (error) {
+      // Ensure execution is properly marked as failed
+      if (execution.status !== 'failed') {
+        execution.status = 'failed';
+        execution.endTime = new Date();
+        execution.errors.push(error instanceof Error ? error.message : 'Unknown error');
+        
+        await this.completeExecution(execution, 'failed');
+      }
+      
+      logger.error('Wave execution failed', {
+        executionId: execution.id,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      
+      // Emit failure event
+      this.emit('wave-failed', execution, error);
+      
+      throw error;
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * Atomically complete execution and move to history
+   */
+  private async completeExecution(execution: WaveExecution, status: WaveStatus): Promise<void> {
+    const completionRelease = await this.cleanupMutex.acquire();
+    try {
+      execution.status = status;
+      execution.endTime = new Date();
+      
+      // Atomic move from active to history
+      await this.executionHistory.set(execution.id, execution);
+      await this.activeExecutions.delete(execution.id);
+      await this.executionCounter.decrement();
+    } finally {
+      completionRelease();
+    }
+  }
+
+  /**
+   * Execute progressive wave strategy
+   * Incremental enhancement with iterative improvement
+   */
+  private async executeProgressive(plan: WaveExecutionPlan, execution: WaveExecution): Promise<void> {
+    logger.info('Executing progressive wave strategy', {
+      executionId: execution.id,
+      phaseCount: plan.phases.length
+    });
+    
+    // Sort phases by priority (highest first)
+    const sortedPhases = [...plan.phases].sort((a, b) => b.priority - a.priority);
+    
+    for (const phase of sortedPhases) {
+      try {
+        // Check dependencies
+        if (!this.areDependenciesMet(phase.dependencies, execution.completedPhases)) {
+          logger.warn('Phase dependencies not met, skipping', {
+            phaseId: phase.id,
+            dependencies: phase.dependencies,
+            completed: execution.completedPhases
+          });
+          continue;
+        }
+        
+        execution.currentPhase = phase.id;
+        
+        logger.info('Executing phase', {
+          executionId: execution.id,
+          phaseId: phase.id,
+          phaseName: phase.name
+        });
+        
+        // Execute phase with timeout and thread safety
+        const phaseResult = await this.executePhaseWithTimeout(phase, execution);
+        
+        // Atomically update execution state
+        await this.updateExecutionState(execution, phase.id, phaseResult, phase.estimatedTokens);
+        
+        // Progressive enhancement: adapt based on results
+        await this.adaptBasedOnResults(execution, phaseResult);
+        
+      } catch (error) {
+        logger.error('Phase execution failed', {
+          phaseId: phase.id,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+        
+        await this.markPhaseAsFailed(execution, phase.id, error instanceof Error ? error.message : 'Unknown error');
+        
+        // Progressive strategy: continue with other phases unless critical
+        if (phase.priority >= 9) {
+          throw new WaveExecutionError(
+            `Critical phase failed: ${phase.id}`,
+            execution.id
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Execute systematic wave strategy
+   * Methodical analysis with strict ordering
+   */
+  private async executeSystematic(plan: WaveExecutionPlan, execution: WaveExecution): Promise<void> {
+    logger.info('Executing systematic wave strategy', {
+      executionId: execution.id,
+      phaseCount: plan.phases.length
+    });
+    
+    // Systematic strategy requires dependency-ordered execution
+    const orderedPhases = this.orderPhasesByDependencies(plan.phases);
+    
+    for (const phase of orderedPhases) {
+      try {
+        execution.currentPhase = phase.id;
+        
+        logger.info('Executing phase systematically', {
+          executionId: execution.id,
+          phaseId: phase.id,
+          phaseName: phase.name
+        });
+        
+        // Execute phase
+        const phaseResult = await this.executePhaseWithTimeout(phase, execution);
+        
+        // Atomically update execution state
+        await this.updateExecutionState(execution, phase.id, phaseResult, phase.estimatedTokens);
+        
+        // Validation if required
+        if (plan.validationRequired) {
+          await this.validatePhaseResult(phase, phaseResult, execution);
+        }
+        
+      } catch (error) {
+        // Systematic strategy: fail fast on any error
+        throw new WaveExecutionError(
+          `Systematic execution failed at phase ${phase.id}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          execution.id
+        );
+      }
+    }
+  }
+
+  /**
+   * Execute adaptive wave strategy
+   * Dynamic configuration based on execution context
+   */
+  private async executeAdaptive(plan: WaveExecutionPlan, execution: WaveExecution): Promise<void> {
+    logger.info('Executing adaptive wave strategy', {
+      executionId: execution.id,
+      phaseCount: plan.phases.length
+    });
+    
+    let remainingPhases = [...plan.phases];
+    let concurrentPhases = Math.min(plan.maxConcurrentPhases, 2); // Start conservative
+    
+    while (remainingPhases.length > 0) {
+      // Select phases to execute concurrently
+      const executablePhases = this.selectExecutablePhases(
+        remainingPhases,
+        execution.completedPhases,
+        concurrentPhases
+      );
+      
+      if (executablePhases.length === 0) {
+        throw new WaveExecutionError(
+          'No executable phases found - possible circular dependency',
+          execution.id
+        );
+      }
+      
+      try {
+        // Execute phases concurrently
+        const phasePromises = executablePhases.map(phase => 
+          this.executePhaseWithTimeout(phase, execution)
+        );
+        
+        const results = await Promise.allSettled(phasePromises);
+        
+        // Process results atomically
+        for (let i = 0; i < results.length; i++) {
+          const result = results[i];
+          const phase = executablePhases[i];
+          
+          if (result.status === 'fulfilled') {
+            await this.updateExecutionState(execution, phase.id, result.value, phase.estimatedTokens);
+          } else {
+            await this.markPhaseAsFailed(execution, phase.id, result.reason);
+          }
+        }
+        
+        // Remove completed/failed phases
+        remainingPhases = remainingPhases.filter(phase => 
+          !execution.completedPhases.includes(phase.id) &&
+          !execution.failedPhases.includes(phase.id)
+        );
+        
+        // Adapt concurrency based on success rate
+        const successRate = executablePhases.length > 0 ? 
+          execution.completedPhases.length / (execution.completedPhases.length + execution.failedPhases.length) : 1;
+        
+        if (successRate > 0.8 && concurrentPhases < plan.maxConcurrentPhases) {
+          concurrentPhases += 1;
+        } else if (successRate < 0.5 && concurrentPhases > 1) {
+          concurrentPhases -= 1;
+        }
+        
+      } catch (error) {
+        throw new WaveExecutionError(
+          `Adaptive execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          execution.id
+        );
+      }
+    }
+  }
+
+  /**
+   * Execute enterprise wave strategy
+   * Large-scale orchestration with full validation
+   */
+  private async executeEnterprise(plan: WaveExecutionPlan, execution: WaveExecution): Promise<void> {
+    logger.info('Executing enterprise wave strategy', {
+      executionId: execution.id,
+      phaseCount: plan.phases.length
+    });
+    
+    // Enterprise strategy: full validation and checkpoint system
+    const checkpoints: string[] = [];
+    const orderedPhases = this.orderPhasesByDependencies(plan.phases);
+    
+    for (const phase of orderedPhases) {
+      try {
+        execution.currentPhase = phase.id;
+        
+        // Pre-execution validation
+        await this.validatePreExecution(phase, execution);
+        
+        logger.info('Executing enterprise phase', {
+          executionId: execution.id,
+          phaseId: phase.id,
+          phaseName: phase.name,
+          checkpoint: checkpoints.length
+        });
+        
+        // Execute with full monitoring
+        const phaseResult = await this.executePhaseWithTimeout(phase, execution);
+        
+        // Post-execution validation
+        await this.validatePhaseResult(phase, phaseResult, execution);
+        
+        // Atomically update state
+        await this.updateExecutionState(execution, phase.id, phaseResult, phase.estimatedTokens);
+        
+        // Create checkpoint
+        checkpoints.push(phase.id);
+        await this.createCheckpoint(execution, phase.id);
+        
+        logger.info('Enterprise phase completed with checkpoint', {
+          phaseId: phase.id,
+          checkpointCount: checkpoints.length
+        });
+        
+      } catch (error) {
+        logger.error('Enterprise phase failed', {
+          phaseId: phase.id,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+        
+        // Enterprise strategy: implement rollback if configured
+        if (plan.rollbackStrategy === 'immediate') {
+          await this.rollbackToLastCheckpoint(execution, checkpoints);
+        }
+        
+        throw new WaveExecutionError(
+          `Enterprise execution failed at phase ${phase.id}: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          execution.id
+        );
+      }
+    }
+  }
+
+  // ==================== HELPER METHODS ====================
+
+  /**
+   * Thread-safe helper to update execution state
+   */
+  private async updateExecutionState(
+    execution: WaveExecution, 
+    phaseId: string, 
+    result: Record<string, unknown>, 
+    tokenUsage: number
+  ): Promise<void> {
+    const phaseRelease = await this.phaseMutex.acquire();
+    try {
+      execution.completedPhases.push(phaseId);
+      execution.results.push(result);
+      execution.totalTokensUsed += tokenUsage;
+      
+      // Update in storage
+      await this.activeExecutions.set(execution.id, execution);
+    } finally {
+      phaseRelease();
+    }
+  }
+
+  /**
+   * Thread-safe helper to mark phase as failed
+   */
+  private async markPhaseAsFailed(execution: WaveExecution, phaseId: string, error: string): Promise<void> {
+    const phaseRelease = await this.phaseMutex.acquire();
+    try {
+      execution.failedPhases.push(phaseId);
+      execution.errors.push(`Phase ${phaseId}: ${error}`);
+      
+      // Update in storage
+      await this.activeExecutions.set(execution.id, execution);
+    } finally {
+      phaseRelease();
+    }
+  }
+
+  /**
+   * Execute phase with timeout
+   */
+  private async executePhaseWithTimeout(phase: any, execution: WaveExecution): Promise<Record<string, unknown>> {
+    return new Promise((resolve, reject) => {
+      // Check if shutting down before starting phase
+      if (this.isShuttingDown.get()) {
+        reject(new Error('WaveManager is shutting down'));
+        return;
+      }
+      
+      const timer = setTimeout(() => {
+        reject(new Error(`Phase ${phase.id} timed out after ${this.phaseTimeout}ms`));
+      }, this.phaseTimeout);
+      
+      // Mock phase execution with shutdown check
+      this.executePhase(phase, execution)
+        .then(result => {
+          clearTimeout(timer);
+          // Final check before resolving
+          if (this.isShuttingDown.get()) {
+            reject(new Error('WaveManager shutdown during phase execution'));
+          } else {
+            resolve(result);
+          }
+        })
+        .catch(error => {
+          clearTimeout(timer);
+          reject(error);
+        });
+    });
+  }
+
+  /**
+   * Execute individual phase with concurrency checks (mock implementation)
+   */
+  private async executePhase(phase: any, execution: WaveExecution): Promise<Record<string, unknown>> {
+    // Periodic shutdown checks during execution
+    const executionTime = 100 + Math.random() * 200;
+    const checkInterval = Math.min(50, executionTime / 4);
+    
+    for (let elapsed = 0; elapsed < executionTime; elapsed += checkInterval) {
+      if (this.isShuttingDown.get()) {
+        throw new Error(`Phase ${phase.id} interrupted by shutdown`);
+      }
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+    
+    return {
+      phaseId: phase.id,
+      phaseName: phase.name,
+      result: `Completed phase: ${phase.name}`,
+      tokensUsed: phase.estimatedTokens,
+      executionTime,
+      timestamp: new Date(),
+      executionId: execution.id
+    };
+  }
+
+  /**
+   * Check if dependencies are met
+   */
+  private areDependenciesMet(dependencies: string[], completedPhases: string[]): boolean {
+    return dependencies.every(dep => completedPhases.includes(dep));
+  }
+
+  /**
+   * Order phases by dependencies (topological sort)
+   */
+  private orderPhasesByDependencies(phases: any[]): any[] {
+    const ordered: any[] = [];
+    const visited = new Set<string>();
+    const visiting = new Set<string>();
+    
+    const visit = (phase: any): void => {
+      if (visiting.has(phase.id)) {
+        throw new Error(`Circular dependency detected involving phase: ${phase.id}`);
+      }
+      
+      if (visited.has(phase.id)) {
+        return;
+      }
+      
+      visiting.add(phase.id);
+      
+      // Visit dependencies first
+      for (const depId of phase.dependencies) {
+        const depPhase = phases.find(p => p.id === depId);
+        if (depPhase) {
+          visit(depPhase);
+        }
+      }
+      
+      visiting.delete(phase.id);
+      visited.add(phase.id);
+      ordered.push(phase);
+    };
+    
+    for (const phase of phases) {
+      if (!visited.has(phase.id)) {
+        visit(phase);
+      }
+    }
+    
+    return ordered;
+  }
+
+  /**
+   * Select executable phases for concurrent execution
+   */
+  private selectExecutablePhases(
+    remainingPhases: any[],
+    completedPhases: string[],
+    maxCount: number
+  ): any[] {
+    return remainingPhases
+      .filter(phase => this.areDependenciesMet(phase.dependencies, completedPhases))
+      .sort((a, b) => b.priority - a.priority)
+      .slice(0, maxCount);
+  }
+
+  /**
+   * Adapt based on phase results
+   */
+  private async adaptBasedOnResults(execution: WaveExecution, result: Record<string, unknown>): Promise<void> {
+    // Mock adaptation logic
+    logger.debug('Adapting based on phase results', {
+      executionId: execution.id,
+      resultKeys: Object.keys(result)
+    });
+  }
+
+  /**
+   * Validate phase result
+   */
+  private async validatePhaseResult(
+    phase: any,
+    result: Record<string, unknown>,
+    execution: WaveExecution
+  ): Promise<void> {
+    // Mock validation logic
+    if (!result || Object.keys(result).length === 0) {
+      throw new Error(`Phase ${phase.id} produced empty result`);
+    }
+  }
+
+  /**
+   * Validate pre-execution conditions
+   */
+  private async validatePreExecution(phase: any, execution: WaveExecution): Promise<void> {
+    // Mock pre-execution validation
+    if (!this.areDependenciesMet(phase.dependencies, execution.completedPhases)) {
+      throw new Error(`Phase ${phase.id} dependencies not met`);
+    }
+  }
+
+  /**
+   * Create checkpoint
+   */
+  private async createCheckpoint(execution: WaveExecution, phaseId: string): Promise<void> {
+    // Mock checkpoint creation
+    logger.debug('Creating checkpoint', {
+      executionId: execution.id,
+      phaseId
+    });
+  }
+
+  /**
+   * Rollback to last checkpoint
+   */
+  private async rollbackToLastCheckpoint(execution: WaveExecution, checkpoints: string[]): Promise<void> {
+    // Mock rollback logic
+    logger.warn('Rolling back to last checkpoint', {
+      executionId: execution.id,
+      lastCheckpoint: checkpoints[checkpoints.length - 1]
+    });
+  }
+
+  /**
+   * Cancel execution with proper synchronization
+   */
+  async cancelExecution(executionId: string): Promise<void> {
+    const execution = await this.activeExecutions.get(executionId);
+    if (!execution) {
+      throw new Error(`Execution not found: ${executionId}`);
+    }
+    
+    await this.completeExecution(execution, 'cancelled');
+    
+    logger.info('Wave execution cancelled', { executionId });
+  }
+
+  /**
+   * Get execution history (thread-safe)
+   */
+  async getExecutionHistory(): Promise<WaveExecution[]> {
+    return await this.executionHistory.values();
+  }
+
+  /**
+   * Get active executions (thread-safe)
+   */
+  async getActiveExecutions(): Promise<WaveExecution[]> {
+    return await this.activeExecutions.values();
+  }
+
+  /**
+   * Get execution statistics
+   */
+  getExecutionStats(): {
+    active: number;
+    total: number;
+    isShuttingDown: boolean;
+  } {
+    return {
+      active: this.executionCounter.get(),
+      total: this.activeExecutions.size + this.executionHistory.size,
+      isShuttingDown: this.isShuttingDown.get()
+    };
+  }
+
+  /**
+   * Cleanup resources with proper synchronization
+   */
+  async cleanup(): Promise<void> {
+    // Mark as shutting down to prevent new executions
+    await this.isShuttingDown.set(true);
+    
+    const cleanupRelease = await this.cleanupMutex.acquire();
+    try {
+      logger.info('Starting WaveManager cleanup', {
+        activeExecutions: this.activeExecutions.size,
+        totalExecutions: this.executionCounter.get()
+      });
+      
+      // Cancel all active executions
+      const activeIds = await this.activeExecutions.keys();
+      const cancelPromises = activeIds.map(id => 
+        this.cancelExecution(id).catch(error => 
+          logger.warn('Failed to cancel execution during cleanup', { id, error })
+        )
+      );
+      
+      await Promise.allSettled(cancelPromises);
+      
+      // Clear all collections
+      await this.activeExecutions.clear();
+      await this.executionCounter.reset();
+      
+      logger.info('WaveManager cleanup completed');
+      
+    } catch (error) {
+      logger.error('Error during WaveManager cleanup', {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+      throw error;
+    } finally {
+      cleanupRelease();
+    }
+  }
+
+  /**
+   * Graceful shutdown - wait for active executions to complete
+   */
+  async gracefulShutdown(timeoutMs = 30000): Promise<void> {
+    await this.isShuttingDown.set(true);
+    
+    const startTime = Date.now();
+    
+    // Wait for active executions to complete
+    while (this.executionCounter.get() > 0 && (Date.now() - startTime) < timeoutMs) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    // Force cleanup if timeout exceeded
+    if (this.executionCounter.get() > 0) {
+      logger.warn('Graceful shutdown timeout exceeded, forcing cleanup', {
+        remainingExecutions: this.executionCounter.get()
+      });
+    }
+    
+    await this.cleanup();
+  }
+}

@@ -1,4 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
+import { 
+  ResourceMonitor, 
+  ManagedMap, 
+  ManagedArray,
+  CacheManager,
+  logger 
+} from '@superclaude/shared';
 import {
   Task,
   TaskQueue,
@@ -23,12 +30,117 @@ import {
  * Integrates patterns from MCP TaskManager research findings
  */
 export class TaskQueueManager {
-  private tasks: Map<string, Task> = new Map();
-  private queues: Map<string, TaskQueue> = new Map();
-  private taskExecutionOrder: string[] = [];
+  private resourceMonitor: ResourceMonitor;
+  private cacheManager: CacheManager;
+  private tasks: ManagedMap<string, Task>;
+  private queues: ManagedMap<string, TaskQueue>;
+  private taskExecutionOrder: ManagedArray<string>;
 
   constructor() {
+    // Initialize resource management
+    this.resourceMonitor = new ResourceMonitor({
+      maxMapSize: 10000,
+      maxArrayLength: 5000,
+      ttlSeconds: 7 * 24 * 60 * 60, // 7 days
+      cleanupIntervalMs: 600000, // 10 minutes
+      memoryThresholdBytes: 400 * 1024 * 1024 // 400MB threshold
+    });
+
+    this.cacheManager = new CacheManager();
+
+    // Initialize managed collections
+    this.tasks = new ManagedMap('task-storage', this.resourceMonitor, {
+      maxSize: 10000,
+      ttlMs: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
+    this.queues = new ManagedMap('queue-storage', this.resourceMonitor, {
+      maxSize: 1000,
+      ttlMs: 30 * 24 * 60 * 60 * 1000 // 30 days
+    });
+
+    this.taskExecutionOrder = new ManagedArray('execution-order', this.resourceMonitor, {
+      maxLength: 5000,
+      rotationSize: 2500
+    });
+
+    this.setupResourceMonitoring();
     this.initializeDefaultQueue();
+    
+    logger.info('TaskQueueManager initialized with resource management');
+  }
+
+  /**
+   * Setup resource monitoring event handlers
+   */
+  private setupResourceMonitoring(): void {
+    this.resourceMonitor.on('memory_threshold_exceeded', (data) => {
+      logger.warn('Memory threshold exceeded in TaskQueueManager', data);
+      this.performMemoryCleanup();
+    });
+
+    this.resourceMonitor.on('size_limit_exceeded', (data) => {
+      logger.warn('Task storage size limit exceeded', data);
+      if (data.resourceId === 'task-storage') {
+        this.cleanupCompletedTasks();
+      }
+    });
+
+    this.resourceMonitor.on('resource_stale', (data) => {
+      logger.debug('Stale resource detected in TaskQueueManager', data);
+    });
+  }
+
+  /**
+   * Perform memory cleanup
+   */
+  private performMemoryCleanup(): void {
+    // Clean up completed tasks older than 1 day
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    let removedCount = 0;
+
+    for (const [taskId, task] of this.tasks.entries()) {
+      if (task.state === TaskState.COMPLETED && 
+          task.completedAt && 
+          task.completedAt < cutoff) {
+        this.tasks.delete(taskId);
+        removedCount++;
+      }
+    }
+
+    // Clean up execution order
+    const executionOrderSize = Math.floor(this.taskExecutionOrder.length * 0.7);
+    this.taskExecutionOrder.splice(0, this.taskExecutionOrder.length - executionOrderSize);
+
+    // Trigger cache cleanup
+    this.cacheManager.handleMemoryPressure();
+
+    logger.info('TaskQueueManager memory cleanup completed', { 
+      tasksRemoved: removedCount,
+      executionOrderSize: this.taskExecutionOrder.length 
+    });
+  }
+
+  /**
+   * Clean up completed tasks
+   */
+  private cleanupCompletedTasks(): void {
+    const completedTasks = Array.from(this.tasks.entries())
+      .filter(([_, task]) => task.state === TaskState.COMPLETED || task.state === TaskState.CANCELLED)
+      .sort((a, b) => {
+        const aTime = a[1].completedAt?.getTime() || a[1].updatedAt.getTime();
+        const bTime = b[1].completedAt?.getTime() || b[1].updatedAt.getTime();
+        return aTime - bTime; // Oldest first
+      });
+
+    // Remove oldest 30% of completed tasks
+    const toRemove = Math.floor(completedTasks.length * 0.3);
+    for (let i = 0; i < toRemove; i++) {
+      const [taskId] = completedTasks[i];
+      this.tasks.delete(taskId);
+    }
+
+    logger.debug('Completed tasks cleanup performed', { removedCount: toRemove });
   }
 
   /**
@@ -462,7 +574,10 @@ export class TaskQueueManager {
    */
   private updateExecutionOrder(taskId: string): void {
     // Remove from current position
-    this.taskExecutionOrder = this.taskExecutionOrder.filter(id => id !== taskId);
+    const currentIndex = this.taskExecutionOrder.indexOf(taskId);
+    if (currentIndex !== -1) {
+      this.taskExecutionOrder.splice(currentIndex, 1);
+    }
     
     const task = this.tasks.get(taskId);
     if (!task || task.state === TaskState.COMPLETED || task.state === TaskState.CANCELLED) {
@@ -544,5 +659,34 @@ export class TaskQueueManager {
   private isToday(date: Date): boolean {
     const today = new Date();
     return date.toDateString() === today.toDateString();
+  }
+
+  /**
+   * Cleanup all resources
+   */
+  async cleanup(): Promise<void> {
+    // Clean up managed resources
+    this.tasks.cleanup();
+    this.queues.cleanup();
+    this.taskExecutionOrder.cleanup();
+
+    // Clean up resource monitor and cache manager
+    this.resourceMonitor.cleanup();
+    this.cacheManager.cleanup();
+
+    logger.info('TaskQueueManager cleanup completed');
+  }
+
+  /**
+   * Get resource statistics for monitoring
+   */
+  getResourceStats(): any {
+    return {
+      tasks: this.tasks.size,
+      queues: this.queues.size,
+      executionOrder: this.taskExecutionOrder.length,
+      resourceStats: this.resourceMonitor.getResourceStats(),
+      cacheStats: this.cacheManager.getCacheStats()
+    };
   }
 }

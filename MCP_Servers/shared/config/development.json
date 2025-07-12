@@ -1,0 +1,99 @@
+{
+  "environment": "development",
+  "database": {
+    "type": "sqlite",
+    "sqlite": {
+      "path": "./data/development.db",
+      "enableWAL": true,
+      "enableForeignKeys": true,
+      "busyTimeoutMs": 5000
+    }
+  },
+  "logging": {
+    "level": "debug",
+    "format": "text",
+    "destination": "console"
+  },
+  "performance": {
+    "metricsEnabled": true,
+    "metricsRetentionDays": 7,
+    "enableProfiling": true,
+    "profileSampleRate": 1.0
+  },
+  "security": {
+    "enableRateLimit": false,
+    "rateLimitRequests": 1000,
+    "rateLimitWindow": 15,
+    "enableCors": true,
+    "corsOrigins": ["*"],
+    "enableAuth": false
+  },
+  "features": {
+    "enableTaskPersistence": true,
+    "enablePerformanceMetrics": true,
+    "enableHealthChecks": true,
+    "enableApiDocs": true,
+    "maxConcurrentOperations": 20,
+    "operationTimeoutMs": 60000
+  },
+  "mcp": {
+    "servers": {
+      "superclaude-tasks": {
+        "enabled": true,
+        "host": "localhost",
+        "port": 3001,
+        "timeout": 10000,
+        "retries": 3,
+        "healthCheckInterval": 30000
+      },
+      "superclaude-orchestrator": {
+        "enabled": true,
+        "host": "localhost",
+        "port": 3002,
+        "timeout": 15000,
+        "retries": 3,
+        "healthCheckInterval": 30000
+      },
+      "superclaude-code": {
+        "enabled": true,
+        "host": "localhost",
+        "port": 3003,
+        "timeout": 10000,
+        "retries": 3,
+        "healthCheckInterval": 30000
+      },
+      "superclaude-intelligence": {
+        "enabled": true,
+        "host": "localhost",
+        "port": 3004,
+        "timeout": 10000,
+        "retries": 3,
+        "healthCheckInterval": 30000
+      },
+      "superclaude-ui": {
+        "enabled": true,
+        "host": "localhost",
+        "port": 3005,
+        "timeout": 10000,
+        "retries": 3,
+        "healthCheckInterval": 30000
+      },
+      "superclaude-quality": {
+        "enabled": true,
+        "host": "localhost",
+        "port": 3006,
+        "timeout": 10000,
+        "retries": 3,
+        "healthCheckInterval": 30000
+      },
+      "superclaude-performance": {
+        "enabled": true,
+        "host": "localhost",
+        "port": 3007,
+        "timeout": 10000,
+        "retries": 3,
+        "healthCheckInterval": 30000
+      }
+    }
+  }
+}

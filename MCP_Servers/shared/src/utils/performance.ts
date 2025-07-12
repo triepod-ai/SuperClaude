@@ -1,5 +1,6 @@
 import { PerformanceMetrics } from '../types/common.js';
 import { logger } from './logger.js';
+import { ResourceMonitor, ManagedMap } from './resource-manager.js';
 
 /**
  * Performance monitoring utilities for SuperClaude MCP servers
@@ -11,13 +12,37 @@ export interface TimerResult {
 }
 
 export class PerformanceMonitor {
-  private static metrics: Map<string, PerformanceMetrics[]> = new Map();
+  private static resourceMonitor: ResourceMonitor;
+  private static metrics: ManagedMap<string, PerformanceMetrics[]>;
   private static timers: Map<string, number> = new Map();
+  private static initialized = false;
+
+  /**
+   * Initialize the performance monitor
+   */
+  private static initialize(): void {
+    if (!this.initialized) {
+      this.resourceMonitor = new ResourceMonitor({
+        maxMapSize: 1000,
+        ttlSeconds: 3600, // 1 hour
+        cleanupIntervalMs: 300000, // 5 minutes
+      });
+
+      this.metrics = new ManagedMap('performance-metrics', this.resourceMonitor, {
+        maxSize: 1000,
+        ttlMs: 3600000 // 1 hour
+      });
+
+      this.initialized = true;
+      logger.debug('PerformanceMonitor initialized with resource management');
+    }
+  }
 
   /**
    * Start a performance timer
    */
   public static startTimer(name: string): void {
+    this.initialize();
     this.timers.set(name, performance.now());
   }
 
@@ -89,6 +114,8 @@ export class PerformanceMonitor {
     operationName: string,
     metrics: Omit<PerformanceMetrics, 'timestamp'>
   ): void {
+    this.initialize();
+    
     const fullMetrics: PerformanceMetrics = {
       ...metrics,
       timestamp: new Date()
@@ -115,6 +142,8 @@ export class PerformanceMonitor {
     avgSuccessRate: number;
     lastMetrics?: PerformanceMetrics;
   } | null {
+    this.initialize();
+    
     const metrics = this.metrics.get(operationName);
     if (!metrics || metrics.length === 0) {
       return null;
@@ -139,6 +168,7 @@ export class PerformanceMonitor {
    * Get all performance metrics
    */
   public static getAllMetrics(): Map<string, PerformanceMetrics[]> {
+    this.initialize();
     return new Map(this.metrics);
   }
 
@@ -146,10 +176,25 @@ export class PerformanceMonitor {
    * Clear metrics for an operation or all operations
    */
   public static clearMetrics(operationName?: string): void {
+    this.initialize();
+    
     if (operationName) {
       this.metrics.delete(operationName);
     } else {
       this.metrics.clear();
+    }
+  }
+
+  /**
+   * Cleanup all resources
+   */
+  public static cleanup(): void {
+    if (this.initialized) {
+      this.metrics.cleanup();
+      this.resourceMonitor.cleanup();
+      this.timers.clear();
+      this.initialized = false;
+      logger.debug('PerformanceMonitor cleanup completed');
     }
   }
 

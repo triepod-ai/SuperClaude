@@ -1,0 +1,96 @@
+{
+  "server": {
+    "enablePersistence": false,
+    "enableAnalytics": true,
+    "enableScheduling": true,
+    "enableLearning": true,
+    "enableLSP": false,
+    "enableAI": false
+  },
+  "database": {
+    "type": "sqlite",
+    "connection": {
+      "filename": "./tasks.db"
+    },
+    "pool": {
+      "min": 1,
+      "max": 10
+    }
+  },
+  "postgresql": {
+    "type": "postgresql",
+    "connection": {
+      "host": "localhost",
+      "port": 5432,
+      "database": "superclaude_tasks",
+      "username": "postgres",
+      "password": "your_password"
+    },
+    "pool": {
+      "min": 2,
+      "max": 20
+    },
+    "ssl": false
+  },
+  "ai_providers": {
+    "openai": {
+      "apiKey": "your_openai_api_key",
+      "model": "gpt-4",
+      "maxTokens": 2000
+    },
+    "anthropic": {
+      "apiKey": "your_anthropic_api_key",
+      "model": "claude-3-sonnet-20240229",
+      "maxTokens": 2000
+    },
+    "google": {
+      "apiKey": "your_google_api_key",
+      "model": "gemini-pro",
+      "maxTokens": 2000
+    }
+  },
+  "lsp_servers": {
+    "typescript": {
+      "serverCommand": "typescript-language-server",
+      "serverArgs": ["--stdio"],
+      "rootPath": "./",
+      "capabilities": {
+        "textDocument": {
+          "documentSymbol": true,
+          "references": true,
+          "definition": true
+        }
+      }
+    },
+    "python": {
+      "serverCommand": "pylsp",
+      "serverArgs": [],
+      "rootPath": "./",
+      "capabilities": {
+        "textDocument": {
+          "documentSymbol": true,
+          "references": true,
+          "definition": true
+        }
+      }
+    }
+  },
+  "scheduling": {
+    "defaultAlgorithm": "hybrid",
+    "resourceConstraints": {
+      "maxConcurrentTasks": 10,
+      "availableHours": 40
+    }
+  },
+  "learning": {
+    "algorithm": "ensemble",
+    "minTrainingSize": 20,
+    "retrainFrequency": 168,
+    "enableOnlineUpdates": true
+  },
+  "analytics": {
+    "enableRealTime": true,
+    "retentionDays": 90,
+    "aggregationIntervals": ["hour", "day", "week"]
+  }
+}
